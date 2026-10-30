@@ -85,6 +85,10 @@ public struct LLMTranslationProvider: TranslationProvider {
 
     public func testConnection() async -> ProviderStatus {
         do {
+            if kind == .openRouter {
+                // The model list is public; verify the key separately.
+                _ = try await http.json("GET", url: url("/key"), headers: ["Authorization": "Bearer \(try requireKey())"], provider: kind)
+            }
             let models = try await listModels()
             let m = configuration.model
             if !m.isEmpty, !models.isEmpty, !models.contains(m), kind != .openRouter {

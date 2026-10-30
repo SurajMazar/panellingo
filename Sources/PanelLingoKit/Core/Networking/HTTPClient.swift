@@ -39,6 +39,9 @@ public struct HTTPClient: Sendable {
         switch http.statusCode {
         case 200..<300: return data
         case 401, 403: throw PanelLingoError.provider(provider, .unauthorized)
+        case 400 where Self.errorMessage(data).lowercased().contains("api key"):
+            // Gemini reports invalid keys as 400 INVALID_ARGUMENT.
+            throw PanelLingoError.provider(provider, .unauthorized)
         case 404:
             let body = Self.errorMessage(data)
             if body.lowercased().contains("model") { throw PanelLingoError.provider(provider, .modelNotFound(body)) }
