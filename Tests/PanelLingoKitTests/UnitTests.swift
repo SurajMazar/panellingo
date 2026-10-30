@@ -379,6 +379,7 @@ struct MixedScriptTests {
     @Test func latinLinesInCJKProjectKeepSpaces() {
         #expect(TextJoiner.join(["FIVE MORE", "MINUTES..."], language: "ja") == "FIVE MORE MINUTES...")
         #expect(TextJoiner.join(["あっ、", "そうだった！"], language: "ja") == "あっ、そうだった！")
+        #expect(TextJoiner.join(["안녕하세요!", "오늘 날씨가 정말 좋네요."], language: "ko") == "안녕하세요! 오늘 날씨가 정말 좋네요.")
     }
 }
 

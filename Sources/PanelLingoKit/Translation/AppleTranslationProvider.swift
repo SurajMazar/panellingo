@@ -41,24 +41,23 @@ public struct AppleTranslationProvider: TranslationProvider {
             }
             source = d
         }
-        switch await Self.status(source: source, target: request.targetLanguage) {
-        case .unsupported:
+        let status = await Self.status(source: source, target: request.targetLanguage)
+        if status == .unsupported {
             throw PanelLingoError.provider(.apple, .unsupportedLanguagePair(source, request.targetLanguage))
-        case .downloadable:
-            throw PanelLingoError.provider(.apple, .languageNotInstalled(source, request.targetLanguage))
-        case .installed: break
         }
         guard #available(macOS 26.0, *) else {
             throw PanelLingoError.provider(.apple, .notConfigured("background Apple Translation requires macOS 26"))
         }
-        let session = TranslationSession(installedSource: Self.language(source), target: Self.language(request.targetLanguage))
-        let nonEmpty = request.items.filter { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-        let reqs = nonEmpty.map { TranslationSession.Request(sourceText: Self.normalise($0.text), clientIdentifier: $0.id) }
+        // Always try when the pair is supported: the availability answer can lag behind a language
+        // pack that was just downloaded (especially while the app is already running).
         var byID: [String: String] = [:]
-        if !reqs.isEmpty {
-            for r in try await session.translations(from: reqs) {
-                if let id = r.clientIdentifier { byID[id] = r.targetText }
-            }
+        do {
+            byID = try await Self.translateInstalled(request.items, source: source, target: request.targetLanguage)
+        } catch is CancellationError {
+            throw PanelLingoError.cancelled
+        } catch {
+            if status == .downloadable { throw PanelLingoError.provider(.apple, .languageNotInstalled(source, request.targetLanguage)) }
+            throw PanelLingoError.provider(.apple, .server(0, error.localizedDescription))
         }
         let outputs = request.items.map { item in
             TranslationOutput(regionID: item.id, originalText: item.text,
@@ -66,6 +65,19 @@ public struct AppleTranslationProvider: TranslationProvider {
                               reviewRequired: byID[item.id] == nil && !item.text.isEmpty)
         }
         return TranslationResult(outputs: outputs, provider: .apple, model: "on-device")
+    }
+
+    @available(macOS 26.0, *)
+    static func translateInstalled(_ items: [TranslationItem], source: String, target: String) async throws -> [String: String] {
+        let session = TranslationSession(installedSource: language(source), target: language(target))
+        let reqs = items.filter { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            .map { TranslationSession.Request(sourceText: normalise($0.text), clientIdentifier: $0.id) }
+        var byID: [String: String] = [:]
+        if reqs.isEmpty { return byID }
+        for r in try await session.translations(from: reqs) {
+            if let id = r.clientIdentifier { byID[id] = r.targetText }
+        }
+        return byID
     }
 
     /// OCR line breaks inside a bubble are layout, not sentence breaks.

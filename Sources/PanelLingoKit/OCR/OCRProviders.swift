@@ -16,7 +16,8 @@ public enum TextJoiner {
     public static func join(_ lines: [String], language: String?) -> String {
         // Decide by the script actually recognised, so English lines in a Japanese project keep their spaces.
         let joined = lines.joined()
-        let noSpaces = joined.containsCJK || (language == "th" && joined.containsThai)
+        // Chinese/Japanese and Thai are written without spaces; Korean uses them.
+        let noSpaces = joined.containsHanOrKana || (language == "th" && joined.containsThai)
         if noSpaces { return joined }
         var out = ""
         for l in lines.map({ $0.trimmingCharacters(in: .whitespaces) }) where !l.isEmpty {
@@ -40,6 +41,7 @@ public enum TextJoiner {
 
 extension String {
     var containsThai: Bool { unicodeScalars.contains { (0x0E00...0x0E7F).contains($0.value) } }
+    var containsHanOrKana: Bool { unicodeScalars.contains { (0x3040...0x30FF).contains($0.value) || (0x4E00...0x9FFF).contains($0.value) } }
     var containsCJK: Bool {
         unicodeScalars.contains { (0x3040...0x30FF).contains($0.value) || (0x4E00...0x9FFF).contains($0.value) || (0xAC00...0xD7AF).contains($0.value) }
     }

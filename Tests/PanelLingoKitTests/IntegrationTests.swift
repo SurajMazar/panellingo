@@ -240,6 +240,18 @@ struct ImportExportTests {
     }
 }
 
+/// Real Apple Translation check (needs the ko→en pack): `PANELLINGO_E2E_APPLE=1 swift test`.
+@Suite("Apple Translation E2E", .enabled(if: ProcessInfo.processInfo.environment["PANELLINGO_E2E_APPLE"] != nil))
+struct AppleTranslationE2ETests {
+    @Test func koreanToEnglish() async throws {
+        let (store, page) = try PipelineIntegrationTests.makeStore(SampleComic.koreanPage(), source: "ko", direction: .leftToRight)
+        var s = store.settings; s.translationProvider = .apple; s.translationModel = ""
+        let done = try await PipelineEngine(store: store).run(page, options: PipelineOptions(settings: s))
+        #expect(done.regions.first?.sourceText == "안녕하세요! 오늘 날씨가 정말 좋네요.")
+        #expect(done.regions.first?.translatedText?.lowercased().contains("weather") == true)
+    }
+}
+
 /// Optional real local-model check: `PANELLINGO_E2E_OLLAMA_MODEL=qwen3-vl:8b-instruct swift test`.
 @Suite("Local provider E2E", .enabled(if: ProcessInfo.processInfo.environment["PANELLINGO_E2E_OLLAMA_MODEL"] != nil))
 struct LocalProviderE2ETests {

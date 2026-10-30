@@ -30,8 +30,16 @@ final class AppSettings {
 
     var stored: Stored { didSet { save() } }
 
+    /// Test/demo runs (PANELLINGO_PROJECT_DIR set) use their own preferences so they never touch
+    /// the installed app's settings or last-opened project.
+    static let defaults: UserDefaults = {
+        if ProcessInfo.processInfo.environment["PANELLINGO_PROJECT_DIR"] != nil,
+           let d = UserDefaults(suiteName: "app.panellingo.PanelLingo.dev") { return d }
+        return .standard
+    }()
+
     private init() {
-        if let d = UserDefaults.standard.data(forKey: "settings.v1"), let s = try? JSONDecoder().decode(Stored.self, from: d) {
+        if let d = Self.defaults.data(forKey: "settings.v1"), let s = try? JSONDecoder().decode(Stored.self, from: d) {
             stored = s
             // Add providers introduced in newer versions.
             for k in ProviderKind.allCases where !s.providers.contains(where: { $0.kind == k }) {
@@ -43,7 +51,7 @@ final class AppSettings {
     }
 
     private func save() {
-        if let d = try? JSONEncoder().encode(stored) { UserDefaults.standard.set(d, forKey: "settings.v1") }
+        if let d = try? JSONEncoder().encode(stored) { Self.defaults.set(d, forKey: "settings.v1") }
     }
 
     var projectLocation: URL {

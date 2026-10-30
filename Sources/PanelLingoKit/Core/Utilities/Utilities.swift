@@ -48,7 +48,7 @@ public enum ProviderFailure: Sendable, Equatable {
         case .server(let c, let s): "Server error \(c): \(s)"
         case .malformedResponse(let s): "The model returned an unusable response: \(s)"
         case .unsupportedLanguagePair(let a, let b): "\(LanguageInfo.name(a)) → \(LanguageInfo.name(b)) is not supported by this provider."
-        case .languageNotInstalled(let a, let b): "Language pack for \(LanguageInfo.name(a)) → \(LanguageInfo.name(b)) is not downloaded. Open System Settings › General › Language & Region › Translation Languages to download it."
+        case .languageNotInstalled(let a, let b): "The \(LanguageInfo.name(a)) → \(LanguageInfo.name(b)) language pack isn't available to PanelLingo yet. Download it in Settings › Local Models (or System Settings › General › Language & Region › Translation Languages), then press Retry. If it's already downloaded, quit and reopen PanelLingo."
         case .modelNotFound(let m): "Model “\(m)” is not available on this provider."
         }
     }
