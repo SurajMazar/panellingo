@@ -14,8 +14,10 @@ public protocol OCRProvider: Sendable {
 public enum TextJoiner {
     /// Joins OCR lines respecting the script: no spaces for CJK/Thai, de-hyphenation for others.
     public static func join(_ lines: [String], language: String?) -> String {
-        let noSpaces = language.flatMap { LanguageInfo.info($0) }.map { !$0.usesSpaces } ?? lines.joined().containsCJK
-        if noSpaces { return lines.joined() }
+        // Decide by the script actually recognised, so English lines in a Japanese project keep their spaces.
+        let joined = lines.joined()
+        let noSpaces = joined.containsCJK || (language == "th" && joined.containsThai)
+        if noSpaces { return joined }
         var out = ""
         for l in lines.map({ $0.trimmingCharacters(in: .whitespaces) }) where !l.isEmpty {
             if out.isEmpty { out = l; continue }
@@ -37,6 +39,7 @@ public enum TextJoiner {
 }
 
 extension String {
+    var containsThai: Bool { unicodeScalars.contains { (0x0E00...0x0E7F).contains($0.value) } }
     var containsCJK: Bool {
         unicodeScalars.contains { (0x3040...0x30FF).contains($0.value) || (0x4E00...0x9FFF).contains($0.value) || (0xAC00...0xD7AF).contains($0.value) }
     }
@@ -63,6 +66,8 @@ public struct VisionOCRProvider: OCRProvider {
         func score(_ r: OCRResult) -> Double {
             var s = r.confidence * Double(min(r.text.count, 12) + 1)
             if r.orientation == region.orientation { s *= 1.15 }
+            // Vertical lettering is a CJK convention; a vertical reading without CJK is almost always wrong.
+            if r.orientation == .vertical && !r.text.containsCJK { s *= 0.1 }
             return s
         }
         var result = candidates.max { score($0) < score($1) }

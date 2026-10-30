@@ -373,3 +373,11 @@ struct UndoTests {
         um.redo(); #expect(current == v2)
     }
 }
+
+@Suite("Mixed scripts")
+struct MixedScriptTests {
+    @Test func latinLinesInCJKProjectKeepSpaces() {
+        #expect(TextJoiner.join(["FIVE MORE", "MINUTES..."], language: "ja") == "FIVE MORE MINUTES...")
+        #expect(TextJoiner.join(["あっ、", "そうだった！"], language: "ja") == "あっ、そうだった！")
+    }
+}
