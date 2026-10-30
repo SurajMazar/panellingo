@@ -37,7 +37,8 @@ struct WorkspaceView: View {
     var subtitle: String {
         guard app.hasProject, !app.showLibrary else { return "" }
         let s = app.projectSettings
-        return "\(LanguageInfo.name(s.sourceLanguage)) → \(LanguageInfo.name(s.targetLanguage)) · \(s.translationProvider.shortName)"
+        let series = app.currentSeries.map { "\($0.info.name) · " } ?? ""
+        return series + "\(LanguageInfo.name(s.sourceLanguage)) → \(LanguageInfo.name(s.targetLanguage)) · \(s.translationProvider.shortName)"
     }
 }
 
@@ -51,7 +52,12 @@ struct MainToolbar: ToolbarContent {
                 Label("Library", systemImage: "books.vertical")
             }
             .help("Show all chapters (⇧⌘L)")
-            Button { app.showLibrary || !app.hasProject ? app.presentAddChaptersPanel() : app.presentImportPanel() } label: {
+            Button {
+                if app.showLibrary || !app.hasProject {
+                    let sel = app.librarySelection
+                    app.presentAddChaptersPanel(into: sel == AppState.unsortedID ? nil : sel)
+                } else { app.presentImportPanel() }
+            } label: {
                 Label("Import", systemImage: "square.and.arrow.down")
             }
             .help("Library: add chapters (one per PDF/CBZ/folder). Chapter: add pages to it (⌘O)")
@@ -125,9 +131,9 @@ struct SidebarView: View {
         List(selection: $app.selectedPageID) {
             if app.hasProject {
                 Section {
-                    Button { app.showLibrary = true } label: {
-                        Label("All Chapters", systemImage: "books.vertical")
-                    }.buttonStyle(.borderless)
+                    Button { app.showSeries(app.currentSeries?.id) } label: {
+                        Label(app.currentSeries.map { "\($0.info.name)" } ?? "Library", systemImage: app.currentSeries == nil ? "books.vertical" : "chevron.left")
+                    }.buttonStyle(.borderless).help("Show this chapter's series in the library")
                     HStack {
                         Image(systemName: "book.closed.fill").foregroundStyle(.tint)
                         Text(app.projectTitle).font(.headline).lineLimit(1)

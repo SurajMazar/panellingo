@@ -424,3 +424,83 @@ struct ChapterLibraryTests {
         #expect(chapters[1].progress == 1 && chapters[1].pageCount == 2)
     }
 }
+
+@Suite("Series library")
+struct SeriesLibraryTests {
+    func tempLibrary() throws -> SeriesLibrary {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("series-\(UUID().uuidString.prefix(6))")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return SeriesLibrary(root: dir)
+    }
+
+    func chapter(_ lib: SeriesLibrary, _ name: String, in folder: URL?) throws -> URL {
+        let url = try lib.newChapterURL(name: name, in: folder)
+        let s = try ProjectStore.create(at: url, title: name)
+        try s.addPage(imageData: ImageIOHelper.png(SampleComic.noTextPage()), fileExtension: "png", name: "p1", importedFrom: nil)
+        return url
+    }
+
+    @Test func seriesFoldersChaptersAndUnsorted() throws {
+        let lib = try tempLibrary()
+        var info = SeriesInfo(name: "Re:Monster"); info.alternateNames = ["リ・モンスター"]
+        let folder = try lib.createSeries(info)
+        #expect(folder.lastPathComponent == "Re_Monster")
+        _ = try chapter(lib, "ch 10", in: folder)
+        _ = try chapter(lib, "ch 2", in: folder)
+        let loose = try chapter(lib, "loose", in: nil)
+        var snap = lib.scan()
+        #expect(snap.series.count == 1 && snap.unsorted.count == 1)
+        #expect(snap.series[0].chapters.count == 2)
+        #expect(snap.matchSeries(named: "re monster")?.id == info.id)
+        #expect(snap.matchSeries(named: "リ・モンスター") != nil)
+
+        // Move the loose chapter into the series.
+        let moved = try lib.moveChapter(loose, toSeriesFolder: folder, seriesName: info.name)
+        snap = lib.scan()
+        #expect(snap.unsorted.isEmpty && snap.series[0].chapters.count == 3)
+        #expect(try ProjectStore.open(moved).manifest.series == "Re:Monster")
+        #expect(lib.seriesFolder(containing: moved)?.lastPathComponent == folder.lastPathComponent)
+        #expect(lib.seriesFolder(containing: lib.root.appendingPathComponent("x.panellingo")) == nil)
+
+        // Rename keeps chapters and updates their cached series name.
+        info.name = "Re Monster (2024)"
+        let renamed = try lib.updateSeries(info, folder: folder)
+        #expect(renamed.lastPathComponent == "Re Monster _2024_" || renamed.lastPathComponent.hasPrefix("Re Monster"))
+        #expect(lib.scan().series[0].chapters.count == 3)
+    }
+
+    @Test func relationsAreBidirectionalAndShareGlossary() throws {
+        let lib = try tempLibrary()
+        var a = SeriesInfo(name: "Main Story"); a.glossary = [GlossaryEntry(original: "ハル", preferred: "Haru")]
+        var b = SeriesInfo(name: "Side Story"); b.glossary = [GlossaryEntry(original: "ミオ", preferred: "Mio"), GlossaryEntry(original: "ハル", preferred: "WRONG")]
+        try lib.createSeries(a); try lib.createSeries(b)
+        var snap = lib.scan()
+        let main = snap.series.first { $0.info.name == "Main Story" }!, side = snap.series.first { $0.info.name == "Side Story" }!
+        // "Main Story is Side Story's parent story" → Main Story gets "Side Story is my spin-off".
+        try lib.link(side, main, kind: .parentStory)
+        snap = lib.scan()
+        let side2 = snap.series(id: side.id)!, main2 = snap.series(id: main.id)!
+        #expect(side2.info.related == [SeriesRelation(seriesID: main.id, kind: .parentStory)])
+        #expect(main2.info.related.first?.kind == .spinOff)
+        // Side story: own glossary first, then the parent's for terms it lacks.
+        let g = SeriesLibrary.effectiveGlossary(chapter: [GlossaryEntry(original: "遠足", preferred: "school trip")], series: side2, snapshot: snap)
+        #expect(g.map(\.preferred) == ["school trip", "Mio", "WRONG"])
+        let gm = SeriesLibrary.effectiveGlossary(chapter: [], series: main2, snapshot: snap)
+        #expect(gm.map(\.preferred) == ["Haru", "Mio"])
+        #expect(SeriesLibrary.effectiveStoryContext(chapter: "", series: side2, snapshot: snap).contains("Parent story: Main Story"))
+        try lib.unlink(side2, main2)
+        #expect(lib.scan().series.allSatisfy { $0.info.related.isEmpty })
+        _ = a; _ = b
+    }
+
+    @Test func seriesDefaultsApplyToNewChapters() {
+        var info = SeriesInfo(name: "K"); info.sourceLanguage = "ko"; info.readingDirection = .topToBottom
+        let s = info.chapterSettings(base: ProjectSettings())
+        #expect(s.sourceLanguage == "ko" && s.readingDirection == .topToBottom && s.targetLanguage == "en")
+    }
+
+    @Test func toleratesSparseSeriesJSON() throws {
+        let info = try FileIO.decoder.decode(SeriesInfo.self, from: Data(#"{"name":"Old"}"#.utf8))
+        #expect(info.name == "Old" && info.related.isEmpty && !info.id.isEmpty)
+    }
+}

@@ -30,3 +30,19 @@ fi
 # Ad-hoc signature so Gatekeeper/TCC treat it as a stable app (replace with Developer ID for distribution).
 codesign --force --deep --sign "${CODESIGN_IDENTITY:--}" --options runtime "$APP"
 echo "Built $APP"
+
+# Local builds are installed into /Applications (skipped on CI or with PANELLINGO_NO_INSTALL=1).
+if [[ -z "${CI:-}" && "${PANELLINGO_NO_INSTALL:-}" != "1" ]]; then
+  DEST="${PANELLINGO_INSTALL_DIR:-/Applications}/PanelLingo.app"
+  if pgrep -xq PanelLingo; then
+    # Projects autosave, so a normal quit loses nothing.
+    osascript -e 'tell application "PanelLingo" to quit' >/dev/null 2>&1 || true
+    for _ in $(seq 1 20); do pgrep -xq PanelLingo || break; sleep 0.25; done
+  fi
+  rm -rf "$DEST.new"
+  ditto "$APP" "$DEST.new"
+  rm -rf "$DEST"
+  mv "$DEST.new" "$DEST"
+  /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$DEST" >/dev/null 2>&1 || true
+  echo "Installed $DEST"
+fi

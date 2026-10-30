@@ -61,6 +61,19 @@ Import → decode (EXIF-normalised) → Panel detection → Text/bubble detectio
 4. **Assembly**: Vision lines inside a bubble's shape belong to that bubble. The rest are grouped into paragraph blocks (free text or SFX). Regions are deduplicated, keeping enclosing bubbles over inner blocks.
 5. **Reading order**: assign each region to the panel it overlaps most, order the panels, then read in bands within each panel (top band first; right-to-left for manga).
 
+## Library layout
+
+```
+<library folder>/                 (Settings › General › Project location; default ~/Documents/PanelLingo)
+  <Series>/
+    series.json                   SeriesInfo: name, alternate names, summary, translation defaults,
+                                  story context, series glossary, related series [(id, kind, shareGlossary)]
+    <chapter>.panellingo          one project per chapter
+  <chapter>.panellingo            unsorted chapter
+```
+
+`SeriesLibrary` scans this layout, creates and renames series, moves chapters, and keeps relations two-way (`kind.inverse` is stored on the other series). When translating, the glossary is the chapter's entries first, then the series', then those of related series that share theirs. The series story context and the list of related series are prepended to the chapter's context.
+
 ## Data model and project format
 
 Coordinates are always **source-image pixels with a top-left origin**. View transforms live only in the canvas: the canvas content is laid out at image pixel size inside a magnifying `NSScrollView`, so overlay coordinates equal image coordinates.

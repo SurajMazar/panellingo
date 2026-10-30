@@ -154,9 +154,25 @@ struct GlossaryEditor: View {
     @Environment(\.dismiss) private var dismiss
     @State private var entries: [GlossaryEntry] = []
     @State private var selection: Set<String> = []
+    @State private var seriesScope = true
+
+    var series: SeriesEntry? { app.currentSeries }
 
     var body: some View {
         VStack(spacing: 0) {
+            if let series {
+                HStack {
+                    Picker("Glossary", selection: $seriesScope) {
+                        Text("Series: \(series.info.name)").tag(true)
+                        Text("This chapter only").tag(false)
+                    }.pickerStyle(.segmented).fixedSize()
+                    Spacer()
+                    Text(seriesScope ? "Used for every chapter of the series" + (series.info.related.contains { $0.shareGlossary } ? " and shared with related series" : "")
+                                     : "Overrides the series glossary for this chapter").font(.caption).foregroundStyle(.secondary)
+                }
+                .padding([.horizontal, .top])
+                .onChange(of: seriesScope) { _, v in entries = v ? series.info.glossary : app.glossary }
+            }
             Table($entries, selection: $selection) {
                 TableColumn("Original") { $e in TextField("", text: $e.original) }
                 TableColumn("Preferred") { $e in TextField("", text: $e.preferred) }
@@ -180,11 +196,15 @@ struct GlossaryEditor: View {
                 }.fixedSize()
                 Spacer()
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("Save") { app.saveGlossary(entries.filter { !$0.original.isEmpty }); dismiss() }.keyboardShortcut(.defaultAction)
+                Button("Save") {
+                    let clean = entries.filter { !$0.original.isEmpty }
+                    if series != nil && seriesScope { app.saveSeriesGlossary(clean) } else { app.saveGlossary(clean) }
+                    dismiss()
+                }.keyboardShortcut(.defaultAction)
             }.padding()
         }
         .frame(width: 820, height: 480)
-        .onAppear { entries = app.glossary }
+        .onAppear { seriesScope = series != nil; entries = series?.info.glossary ?? app.glossary }
     }
 
     func importGlossary() {

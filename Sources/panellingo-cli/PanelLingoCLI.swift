@@ -157,15 +157,17 @@ struct PanelLingoCLI {
 
     static func library(_ pos: [String]) {
         let folder = URL(fileURLWithPath: pos.first ?? (NSHomeDirectory() + "/Documents/PanelLingo"))
-        let chapters = ChapterLibrary.scan(folder: folder)
-        let groups = Dictionary(grouping: chapters, by: \.seriesKey)
-        for key in groups.keys.sorted() {
-            print(key)
-            for c in groups[key]!.sorted(by: ChapterLibrary.chapterOrder) {
-                print("  \(c.displayTitle.padding(toLength: 22, withPad: " ", startingAt: 0)) \(c.status.displayName.padding(toLength: 15, withPad: " ", startingAt: 0)) \(c.translatedPages)/\(c.pageCount) pages  \(c.url.lastPathComponent)")
-            }
+        let snap = SeriesLibrary(root: folder).scan()
+        func row(_ c: ChapterSummary) -> String {
+            "  \(c.displayTitle.padding(toLength: 22, withPad: " ", startingAt: 0)) \(c.status.displayName.padding(toLength: 15, withPad: " ", startingAt: 0)) \(c.translatedPages)/\(c.pageCount) pages"
         }
-        print("\(chapters.count) chapter(s) in \(folder.path)")
+        for s in snap.series {
+            let rel = s.info.related.compactMap { r in snap.series(id: r.seriesID).map { "\(r.kind.displayName.lowercased()): \($0.info.name)" } }
+            print("\(s.info.name)  (\(s.translatedCount)/\(s.chapters.count) translated\(rel.isEmpty ? "" : "; " + rel.joined(separator: ", ")))")
+            for c in s.chapters { print(row(c)) }
+        }
+        if !snap.unsorted.isEmpty { print("Unsorted"); for c in snap.unsorted { print(row(c)) } }
+        print("\(snap.series.count) series, \(snap.allChapters.count) chapter(s) in \(folder.path)")
     }
 
     static func languages() async {

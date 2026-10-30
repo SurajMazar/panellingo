@@ -106,8 +106,15 @@ final class AppState {
 
     // Library
     var showLibrary = false
-    var chapters: [ChapterSummary] = []
+    var library = LibrarySnapshot()
     var libraryLoading = false
+    /// nil = all series; a series ID; or `AppState.unsortedID`.
+    var librarySelection: String?
+    static let unsortedID = "__unsorted__"
+    var chapters: [ChapterSummary] { library.allChapters }
+    var seriesLibrary: SeriesLibrary { SeriesLibrary(root: settings.projectLocation) }
+    /// Series of the open chapter.
+    var currentSeries: SeriesEntry? { store.flatMap { library.series(containing: $0.url) } }
 
     // Presentation
     var alert: AlertItem?
@@ -135,6 +142,14 @@ final class AppState {
         func value(_ k: String) -> String? { args.firstIndex(of: k).flatMap { args.indices.contains($0 + 1) ? args[$0 + 1] : nil } }
         if args.contains("--skip-onboarding") { showOnboarding = false }
         if args.contains("--library") { showLibrary = true }
+        if args.contains("--organize-library") { organizeUnsorted() }
+        if let name = value("--series") {
+            showLibrary = true
+            Task {
+                for _ in 0..<40 where self.library.matchSeries(named: name) == nil { try? await Task.sleep(nanoseconds: 100_000_000) }
+                self.librarySelection = self.library.matchSeries(named: name)?.id
+            }
+        }
         let addChapters = args.indices.filter { args[$0] == "--add-chapter" && args.indices.contains($0 + 1) }.map { URL(fileURLWithPath: args[$0 + 1]) }
         if !addChapters.isEmpty { importAsChapters(addChapters) }
         if args.contains("--sample") { openSample() }
@@ -171,7 +186,11 @@ final class AppState {
     var isProcessingCurrentPage: Bool { selectedPageID.map { pageTasks[$0] != nil } ?? false }
 
     var pipelineOptions: PipelineOptions {
-        PipelineOptions(settings: projectSettings, glossary: glossary, providers: settings.providerMap,
+        // Chapter glossary/context first, then the series', then related series that share theirs.
+        var ps = projectSettings
+        ps.storyContext = SeriesLibrary.effectiveStoryContext(chapter: projectSettings.storyContext, series: currentSeries, snapshot: library)
+        return PipelineOptions(settings: ps, glossary: SeriesLibrary.effectiveGlossary(chapter: glossary, series: currentSeries, snapshot: library),
+                        providers: settings.providerMap,
                         privacy: settings.stored.privacy, processing: settings.stored.processing,
                         includePageImage: settings.stored.includePageImage)
     }
@@ -259,41 +278,57 @@ final class AppState {
     // MARK: - Library
 
     func reloadLibrary() {
-        let folder = settings.projectLocation
+        let lib = seriesLibrary
         let recents = NSDocumentController.shared.recentDocumentURLs + [store?.url].compactMap { $0 }
         libraryLoading = true
         Task.detached(priority: .userInitiated) {
-            let found = ChapterLibrary.scan(folder: folder, extra: recents)
-            await MainActor.run { self.chapters = found; self.libraryLoading = false }
+            let snap = lib.scan(extra: recents)
+            await MainActor.run {
+                self.library = snap
+                self.libraryLoading = false
+                if let sel = self.librarySelection, sel != Self.unsortedID, snap.series(id: sel) == nil { self.librarySelection = nil }
+            }
         }
     }
 
-    /// Creates one project per chapter (each PDF, archive or folder; loose images together),
-    /// guessing series and chapter number from the names, then opens the last one.
-    func importAsChapters(_ urls: [URL], translate: Bool = false) {
+    func showSeries(_ id: String?) {
+        librarySelection = id
+        showLibrary = true
+        reloadLibrary()
+    }
+
+    /// Creates one chapter per PDF / archive / folder (loose images together). Chapters go into
+    /// `seriesID` when given; otherwise into the series whose name matches the file name, which is
+    /// created if needed. Names without a recognisable series stay unsorted.
+    func importAsChapters(_ urls: [URL], into seriesID: String? = nil, translate: Bool = false) {
         let groups = ChapterLibrary.groupIntoChapters(urls)
         guard !groups.isEmpty else { return }
-        let dir = settings.projectLocation
+        let lib = seriesLibrary
         importProgress = (0, "Creating \(groups.count) chapter\(groups.count == 1 ? "" : "s")…")
         Task {
+            var snap = lib.scan()
             var created: [URL] = []
             var problems: [String] = []
             for (i, g) in groups.enumerated() {
                 do {
-                    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
                     let guess = ChapterLibrary.guess(from: g.name)
-                    var url = dir.appendingPathComponent("\(FileIO.sanitizeFileName(g.name)).\(ProjectStore.fileExtension)")
-                    var n = 2
-                    while FileManager.default.fileExists(atPath: url.path) {
-                        url = dir.appendingPathComponent("\(FileIO.sanitizeFileName(g.name)) \(n).\(ProjectStore.fileExtension)"); n += 1
+                    var series: SeriesEntry? = seriesID.flatMap { snap.series(id: $0) }
+                    if series == nil, seriesID == nil, let name = guess.series {
+                        series = snap.matchSeries(named: name)
+                        if series == nil {
+                            var info = SeriesInfo(name: name)
+                            let d = self.settings.stored.defaults
+                            info.sourceLanguage = d.sourceLanguage; info.targetLanguage = d.targetLanguage; info.readingDirection = d.readingDirection
+                            let folder = try lib.createSeries(info)
+                            series = SeriesEntry(info: info, folder: folder, chapters: [])
+                            snap.series.append(series!)
+                        }
                     }
-                    let s = try ProjectStore.create(at: url, title: g.name, settings: self.settings.stored.defaults)
-                    try s.updateManifest { $0.series = guess.series; $0.chapter = guess.chapter }
-                    // Chapters of the same series share the glossary of the most recent chapter.
-                    if let series = guess.series, let sibling = self.chapters.filter({ $0.series == series }).max(by: { $0.modified < $1.modified }),
-                       let g = try? ProjectStore.open(sibling.url).glossary, !g.isEmpty {
-                        try? s.saveGlossary(g)
-                    }
+                    let url = try lib.newChapterURL(name: g.name, in: series?.folder)
+                    let settings = series?.info.chapterSettings(base: self.settings.stored.defaults) ?? self.settings.stored.defaults
+                    let title = series != nil && guess.chapter != nil ? "\(series!.info.name) – Chapter \(guess.chapter!)" : g.name
+                    let s = try ProjectStore.create(at: url, title: title, settings: settings)
+                    try s.updateManifest { $0.series = series?.info.name; $0.chapter = guess.chapter }
                     self.importProgress = (Double(i) / Double(groups.count), g.name)
                     let report = await DefaultComicImportService().importItems(g.items, into: s)
                     if report.added.isEmpty {
@@ -306,7 +341,7 @@ final class AppState {
                 } catch { problems.append("\(g.name): \(error.localizedDescription)") }
             }
             self.importProgress = nil
-            self.reloadLibrary()
+            self.library = lib.scan(extra: NSDocumentController.shared.recentDocumentURLs)
             if let last = created.last {
                 do { try self.openProject(last) } catch { self.show(error, title: "Could not open chapter") }
                 if translate { self.startBatch() }
@@ -316,13 +351,14 @@ final class AppState {
         }
     }
 
-    func presentAddChaptersPanel(translate: Bool = false) {
+    func presentAddChaptersPanel(into seriesID: String? = nil, translate: Bool = false) {
         let p = NSOpenPanel()
         p.allowsMultipleSelection = true
         p.canChooseDirectories = true
         p.allowedContentTypes = [.image, .pdf, .zip, .folder] + ["cbz", "cbr", "webp"].compactMap { UTType(filenameExtension: $0) }
-        p.message = "Each PDF, CBZ/CBR or folder becomes one chapter. Loose images become a single chapter."
-        if p.runModal() == .OK { importAsChapters(p.urls, translate: translate) }
+        let target = seriesID.flatMap { library.series(id: $0)?.info.name }
+        p.message = (target.map { "Add to “\($0)”. " } ?? "") + "Each PDF, CBZ/CBR or folder becomes one chapter. Loose images become a single chapter."
+        if p.runModal() == .OK { importAsChapters(p.urls, into: seriesID, translate: translate) }
     }
 
     func openChapter(_ c: ChapterSummary) {
@@ -330,11 +366,15 @@ final class AppState {
         do { try openProject(c.url) } catch { show(error, title: "Could not open chapter") }
     }
 
+    private func closeIfOpen(_ url: URL) -> Bool {
+        guard store?.url.standardizedFileURL == url.standardizedFileURL || (store?.url.path.hasPrefix(url.standardizedFileURL.path + "/") ?? false) else { return false }
+        cancelAllProcessing()
+        store = nil; pages = []; selectedPageID = nil; settings.stored.lastProjectPath = nil
+        return true
+    }
+
     func trashChapter(_ c: ChapterSummary) {
-        if store?.url.standardizedFileURL == c.url.standardizedFileURL {
-            cancelAllProcessing()
-            store = nil; pages = []; selectedPageID = nil; settings.stored.lastProjectPath = nil
-        }
+        _ = closeIfOpen(c.url)
         NSWorkspace.shared.recycle([c.url]) { _, error in
             Task { @MainActor in
                 if let error { self.show(error, title: "Could not move to Trash") } else { self.toast = "Moved “\(c.title)” to the Trash" }
@@ -348,12 +388,118 @@ final class AppState {
             let s = (store?.url.standardizedFileURL == url.standardizedFileURL) ? store! : try ProjectStore.open(url)
             try s.updateManifest {
                 $0.title = title.isEmpty ? $0.title : title
-                $0.series = series.trimmingCharacters(in: .whitespaces).nilIfEmptyString
                 $0.chapter = chapter.trimmingCharacters(in: .whitespaces).nilIfEmptyString
             }
             if s === store { projectTitle = s.manifest.title }
             reloadLibrary()
         } catch { show(error, title: "Could not update chapter") }
+    }
+
+    // MARK: - Series
+
+    /// Creates or updates a series and applies relation changes to both sides.
+    func saveSeries(_ info: SeriesInfo, existing: SeriesEntry?, relations: [SeriesRelation]) {
+        let lib = seriesLibrary
+        do {
+            var entry: SeriesEntry
+            if let existing {
+                var updated = info
+                updated.related = existing.info.related
+                let folder = try lib.updateSeries(updated, folder: existing.folder)
+                entry = SeriesEntry(info: updated, folder: folder, chapters: existing.chapters)
+            } else {
+                var fresh = info
+                fresh.related = []
+                entry = SeriesEntry(info: fresh, folder: try lib.createSeries(fresh), chapters: [])
+            }
+            var snap = lib.scan()
+            let wanted = Dictionary(uniqueKeysWithValues: relations.map { ($0.seriesID, $0) })
+            for old in entry.info.related where wanted[old.seriesID] == nil {
+                if let other = snap.series(id: old.seriesID), let me = snap.series(id: entry.id) { try lib.unlink(me, other) }
+            }
+            snap = lib.scan()
+            for r in relations {
+                guard let me = snap.series(id: entry.id), let other = snap.series(id: r.seriesID) else { continue }
+                if me.info.related.contains(r) { continue }
+                try lib.link(me, other, kind: r.kind, shareGlossary: r.shareGlossary)
+                snap = lib.scan()
+            }
+            library = lib.scan(extra: NSDocumentController.shared.recentDocumentURLs)
+            if existing == nil { librarySelection = entry.id }
+            // Reopen the current chapter if its series folder was renamed.
+            if let url = store?.url, !FileManager.default.fileExists(atPath: url.path), let open = existing,
+               let moved = library.series(id: open.id)?.chapters.first(where: { $0.url.lastPathComponent == url.lastPathComponent }) {
+                try? openProject(moved.url); showLibrary = true
+            }
+        } catch { show(error, title: "Could not save series") }
+    }
+
+    /// Removes a series. With `keepChapters` its chapters become unsorted; otherwise the folder
+    /// and its chapters go to the Trash (recoverable).
+    func deleteSeries(_ entry: SeriesEntry, keepChapters: Bool) {
+        let lib = seriesLibrary
+        _ = closeIfOpen(entry.folder)
+        do {
+            if keepChapters { _ = try lib.dissolveSeries(folder: entry.folder, snapshot: library) }
+            else { try lib.removeRelations(ofSeriesIn: entry.folder, snapshot: library) }
+        } catch { show(error, title: "Could not remove series"); return }
+        NSWorkspace.shared.recycle([entry.folder]) { _, error in
+            Task { @MainActor in
+                if let error { self.show(error, title: "Could not move to Trash") }
+                else { self.toast = keepChapters ? "Removed series “\(entry.info.name)”; its chapters are now unsorted" : "Moved “\(entry.info.name)” and its chapters to the Trash" }
+                self.librarySelection = nil
+                self.reloadLibrary()
+            }
+        }
+    }
+
+    func moveChapter(_ c: ChapterSummary, toSeries id: String?) {
+        let lib = seriesLibrary
+        let target = id.flatMap { library.series(id: $0) }
+        let wasOpen = store?.url.standardizedFileURL == c.url.standardizedFileURL
+        do {
+            if wasOpen { cancelAllProcessing(); store = nil }
+            let newURL = try lib.moveChapter(c.url, toSeriesFolder: target?.folder, seriesName: target?.info.name)
+            // Chapter adopts the new series' translation defaults.
+            if let t = target, let s = try? ProjectStore.open(newURL) { try? s.saveSettings(t.info.chapterSettings(base: s.settings)) }
+            if wasOpen { try openProject(newURL); showLibrary = true }
+            toast = "Moved to " + (target?.info.name ?? "Unsorted")
+        } catch { show(error, title: "Could not move chapter") }
+        reloadLibrary()
+    }
+
+    /// Files every unsorted chapter whose name reveals a series into that series (creating it if needed).
+    func organizeUnsorted() {
+        let lib = seriesLibrary
+        var snap = lib.scan()
+        var moved = 0
+        let rootPath = lib.root.resolvingSymlinksInPath().path
+        // Only chapters stored in the library folder itself (not recent projects elsewhere).
+        for c in snap.unsorted where c.url.deletingLastPathComponent().resolvingSymlinksInPath().path == rootPath {
+            let name = c.series ?? ChapterLibrary.guess(from: c.url.deletingPathExtension().lastPathComponent).series
+            guard let name else { continue }
+            do {
+                var entry = snap.matchSeries(named: name)
+                if entry == nil {
+                    let info = SeriesInfo(name: name)
+                    entry = SeriesEntry(info: info, folder: try lib.createSeries(info), chapters: [])
+                    snap.series.append(entry!)
+                }
+                if store?.url.standardizedFileURL == c.url.standardizedFileURL { cancelAllProcessing(); store = nil; pages = [] }
+                try lib.moveChapter(c.url, toSeriesFolder: entry!.folder, seriesName: entry!.info.name)
+                moved += 1
+            } catch { problemsToast(error) }
+        }
+        toast = moved == 0 ? "No chapter names matched a series" : "Filed \(moved) chapter\(moved == 1 ? "" : "s") into series"
+        reloadLibrary()
+    }
+
+    private func problemsToast(_ e: Error) { toast = e.localizedDescription }
+
+    func saveSeriesGlossary(_ g: [GlossaryEntry]) {
+        guard var entry = currentSeries else { return }
+        entry.info.glossary = g
+        do { try seriesLibrary.saveInfo(entry.info, folder: entry.folder); reloadLibrary() } catch { show(error, title: "Could not save series glossary") }
     }
 
     func renameProject(_ title: String) {

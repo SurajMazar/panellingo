@@ -319,7 +319,8 @@ struct PageInspector: View {
             }
             ProjectLanguageSection(app: app)
             Section("Glossary") {
-                LabeledContent("Entries", value: "\(app.glossary.count)")
+                LabeledContent("This chapter", value: "\(app.glossary.count) terms")
+                if let s = app.currentSeries { LabeledContent("Series “\(s.info.name)”", value: "\(s.info.glossary.count) terms") }
                 Button("Edit Glossary…") { app.showGlossary = true }
             }
         }
@@ -409,7 +410,7 @@ struct ProjectSettingsSheet: View {
             Form {
                 Section("Chapter") {
                     TextField("Title", text: $title).onSubmit { app.renameProject(title) }
-                    TextField("Series", text: $series)
+                    LabeledContent("Series", value: app.currentSeries?.info.name ?? "Unsorted")
                     TextField("Chapter", text: $number)
                     LabeledContent("Location", value: app.store?.url.path ?? "—").font(.caption)
                     Button("Save As…") { app.presentSaveAs() }
@@ -457,9 +458,9 @@ struct LibraryInspector: View {
                 }
             }
             Section("How it works") {
-                Text("Each chapter is one project. Adding a PDF, CBZ/CBR archive or folder creates one chapter; loose images dropped together form one chapter.")
-                Text("Series and chapter number are guessed from the file name (e.g. “…-chapter-108.pdf”). Edit them with right-click › Edit Series & Chapter.")
-                Text("A new chapter starts with the glossary of the latest chapter in the same series, so names stay consistent.")
+                Text("Library → Series → Chapters. Each chapter is one project inside its series folder.")
+                Text("Adding a PDF, CBZ/CBR or folder creates one chapter. Without a series selected it is filed by its name (“…-chapter-108.pdf”), creating the series if needed.")
+                Text("Series hold the glossary, story notes and translation defaults for all their chapters. Related series (sequel, spin-off, same universe…) can share their glossary.")
             }
             .font(.callout).foregroundStyle(.secondary)
             Section("New chapter defaults") {

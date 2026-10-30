@@ -25,7 +25,8 @@ Built with Swift, SwiftUI and AppKit. Runs fully on-device with Apple Translatio
 - **Typesetting**: Core Text auto-fit that wraps lines to the bubble's actual outline, finds the largest font size that fits and never breaks inside a word unless it has to. It flags overflow and supports outline/stroke, rotation, alignment, line spacing, vertical CJK, right-to-left scripts and font fallback. Lettering presets (Classic Comic, Manga Dialogue, Modern Webtoon, Handwritten, Clean Sans, Bold SFX, Caption) use only fonts that ship with macOS.
 - **Editing**: move and resize regions, draw rectangles or polygons, merge, split, change type, Do Not Translate, Lock. Double-click a bubble to edit its translation and watch the lettering update live. Every edit can be undone and redone.
 - **Compare**: Original, Cleaned and Translated views, a draggable split view, and synchronised side-by-side views.
-- **Chapter library**: every chapter is its own project, listed in a Library grouped by series. Each card shows translated pages, status (not started, in progress, needs review, translated, failed), languages and when it was last changed. Adding a PDF, CBZ/CBR or folder creates one chapter, with the series and chapter number guessed from the file name ("…-chapter-108.pdf"). A new chapter starts with the latest glossary from the same series.
+- **Series → chapters library**: the Library lists your series, and each series holds its chapters (one project per chapter). Every chapter shows translated pages and a status (not started, in progress, needs review, translated, failed). Create series yourself or let PanelLingo file chapters by name ("…-chapter-108.pdf" goes into the matching series, created if needed, alternate titles included). Move chapters between series, or file unsorted chapters automatically. Each series keeps its own glossary, story notes and translation defaults (languages, reading direction, tone, honorifics), and every chapter uses them.
+- **Related series**: link sequels, prequels, spin-offs, same-universe series, adaptations and alternate versions. Links are two-way (a sequel shows up as a prequel on the other side), and related series can share their glossary so names stay consistent.
 - **Batch**: translate a whole chapter with limited concurrency (local models run one page at a time), with pause, resume, cancel and retry of failed pages. One failing page never stops the batch.
 - **Import**: PNG, JPEG, WebP, TIFF, HEIC, GIF, BMP, PDF (image-only pages at their native resolution, other pages at 300 DPI), CBZ/ZIP, CBR (via the system `bsdtar`), folders, clipboard and drag & drop. Files are sorted naturally (1, 2, 10) and duplicates are detected.
 - **Export**: PNG, JPEG, multi-page PDF, CBZ, JSON (all regions, OCR, translations, styling), a Markdown transcript, or a copy of the project package. Exports keep the original resolution and contain no editor overlays.
@@ -41,7 +42,7 @@ Requires macOS 15 or later. It is a universal build for Apple Silicon and Intel.
 ## Quick start
 
 1. Launch PanelLingo. The first-run guide asks how you want to translate.
-2. In the **Library** (⇧⌘L), drop chapter PDFs, CBZs or folders, or click **Add Chapters**. Each one becomes a chapter. Inside an open chapter, dropping files adds pages to it instead.
+2. In the **Library** (⇧⌘L), create a series or just drop chapter PDFs, CBZs or folders. Each one becomes a chapter in the series matching its name. Inside a series, added chapters go into that series. Inside an open chapter, dropping files adds pages to it.
 3. Pick source and target languages and a provider in the inspector (with nothing selected, the inspector shows page and project settings).
 4. Press **Translate Comic** (⌘↩), or use **Comic › Translate Chapter…** for every page.
 5. Review the regions marked ⚠︎, fix the text in the inspector or double-click a bubble, then **Export** (⌘E).
@@ -77,7 +78,7 @@ PanelLingo is a Swift package (`PanelLingoKit` library, the `PanelLingo` app and
 
 ```bash
 swift build && swift test                 # library, app, CLI, tests
-scripts/build-app.sh release               # → dist/PanelLingo.app
+scripts/build-app.sh release               # → dist/PanelLingo.app, also installed to /Applications (PANELLINGO_NO_INSTALL=1 to skip)
 scripts/build-app.sh release --universal   # arm64 + x86_64 (needs Xcode)
 scripts/make-dmg.sh                         # → dist/PanelLingo-<version>.dmg
 open Xcode/PanelLingo.xcodeproj             # or regenerate: cd Xcode && xcodegen generate
