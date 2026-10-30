@@ -318,6 +318,7 @@ struct PageInspector: View {
                 }
             }
             ProjectLanguageSection(app: app)
+            ChapterAISection(app: app)
             Section("Glossary") {
                 LabeledContent("This chapter", value: "\(app.glossary.count) terms")
                 if let s = app.currentSeries { LabeledContent("Series “\(s.info.name)”", value: "\(s.info.glossary.count) terms") }
@@ -342,22 +343,11 @@ struct ProjectLanguageSection: View {
             Picker("Reading", selection: Binding(get: { app.projectSettings.readingDirection }, set: { v in app.updateProjectSettings { $0.readingDirection = v } })) {
                 ForEach(ReadingDirection.allCases) { Text($0.displayName).tag($0) }
             }
-            Picker("Provider", selection: Binding(get: { app.projectSettings.translationProvider }, set: { v in
-                app.updateProjectSettings { $0.translationProvider = v; $0.translationModel = AppSettings.shared.provider(v).model }
-            })) {
-                ForEach(ProviderKind.allCases) { k in
-                    Text(k.displayName + (app.settings.stored.privacy.localOnly && !app.settings.provider(k).isLocal ? " (blocked: local-only)" : "")).tag(k)
-                }
-            }
-            ModelPicker(app: app)
             Picker("Tone", selection: Binding(get: { app.projectSettings.tone }, set: { v in app.updateProjectSettings { $0.tone = v } })) {
                 ForEach(TranslationTone.allCases) { Text($0.displayName).tag($0) }
             }
             Picker("Honorifics", selection: Binding(get: { app.projectSettings.honorifics }, set: { v in app.updateProjectSettings { $0.honorifics = v } })) {
                 ForEach(HonorificPolicy.allCases) { Text($0.displayName).tag($0) }
-            }
-            Picker("OCR", selection: Binding(get: { app.projectSettings.ocrEngine }, set: { v in app.updateProjectSettings { $0.ocrEngine = v } })) {
-                ForEach(OCREngineKind.allCases) { Text($0.displayName).tag($0) }
             }
             Picker("Cleanup", selection: Binding(get: { app.projectSettings.cleanupMode }, set: { v in app.updateProjectSettings { $0.cleanupMode = v } })) {
                 ForEach(CleanupMode.allCases) { Text($0.displayName).tag($0) }
@@ -366,36 +356,42 @@ struct ProjectLanguageSection: View {
     }
 }
 
-struct ModelPicker: View {
+/// Translation & OCR for this chapter: follows Settings by default, or overrides them.
+struct ChapterAISection: View {
     @Bindable var app: AppState
-    @State private var models: [String] = []
-    @State private var status: String?
-    var kind: ProviderKind { app.projectSettings.translationProvider }
-
     var body: some View {
-        if kind.isLLM {
-            HStack {
-                if models.isEmpty {
-                    TextField("Model", text: Binding(get: { app.projectSettings.translationModel }, set: { v in app.updateProjectSettings { $0.translationModel = v } }))
-                } else {
-                    Picker("Model", selection: Binding(get: { app.projectSettings.translationModel }, set: { v in app.updateProjectSettings { $0.translationModel = v } })) {
-                        if !models.contains(app.projectSettings.translationModel) { Text(app.projectSettings.translationModel.isEmpty ? "Choose…" : app.projectSettings.translationModel).tag(app.projectSettings.translationModel) }
-                        ForEach(models, id: \.self) { Text($0).tag($0) }
-                    }
+        Section {
+            Toggle("Use this chapter's own settings", isOn: Binding(get: { app.projectSettings.customAI }, set: { on in
+                app.updateProjectSettings { s in
+                    // Start the override from the current app-wide choices.
+                    if on && !s.customAI { s = s.applyingGlobalAI(AppSettings.shared.stored.defaults) }
+                    s.customAI = on
                 }
-                Button { Task { await refresh() } } label: { Image(systemName: "arrow.clockwise") }.buttonStyle(.borderless).help("Fetch available models")
+            }))
+            let eff = app.effectiveSettings
+            if app.projectSettings.customAI {
+                ProviderModelPicker(title: "Provider",
+                                    provider: Binding(get: { app.projectSettings.translationProvider }, set: { v in app.updateProjectSettings { $0.translationProvider = v } }),
+                                    model: Binding(get: { app.projectSettings.translationModel }, set: { v in app.updateProjectSettings { $0.translationModel = v } }))
+                Picker("OCR", selection: Binding(get: { app.projectSettings.ocrEngine }, set: { v in app.updateProjectSettings { $0.ocrEngine = v } })) {
+                    ForEach(OCREngineKind.allCases) { Text($0.displayName).tag($0) }
+                }
+                if app.projectSettings.ocrEngine == .aiVision {
+                    ProviderModelPicker(title: "OCR provider",
+                                        provider: Binding(get: { app.projectSettings.effectiveOCRProvider }, set: { v in app.updateProjectSettings { $0.ocrProvider = v } }),
+                                        model: Binding(get: { app.projectSettings.ocrModel ?? (app.projectSettings.ocrProvider == nil ? app.projectSettings.translationModel : "") },
+                                                       set: { v in app.updateProjectSettings { $0.ocrProvider = $0.effectiveOCRProvider; $0.ocrModel = v } }),
+                                        visionOnly: true)
+                }
+            } else {
+                LabeledContent("Translation", value: [eff.translationProvider.shortName, eff.translationModel].filter { !$0.isEmpty }.joined(separator: " · "))
+                LabeledContent("OCR", value: eff.ocrEngine == .vision ? "Apple Vision"
+                               : "AI Vision · " + [eff.effectiveOCRProvider.shortName, eff.ocrModel ?? (eff.ocrProvider == nil ? eff.translationModel : "")].filter { !$0.isEmpty }.joined(separator: " · "))
+                SettingsLink { Text("Change for All Chapters…") }
             }
-            .task(id: kind) { await refresh() }
-            if let status { Text(status).font(.caption).foregroundStyle(.secondary) }
+        } header: { Text("Translation & OCR") } footer: {
+            Text(app.projectSettings.customAI ? "This chapter ignores the app-wide choices in Settings › Translation & OCR." : "App-wide — set in Settings › Translation & OCR.")
         }
-    }
-
-    func refresh() async {
-        let cfg = app.settings.provider(kind)
-        let s = await TranslationEngine.defaultProvider(cfg).testConnection()
-        models = s.models.isEmpty ? kind.suggestedModels : s.models
-        status = s.ok ? nil : s.message
-        if app.projectSettings.translationModel.isEmpty, let first = models.first { app.updateProjectSettings { $0.translationModel = first } }
     }
 }
 
@@ -416,6 +412,7 @@ struct ProjectSettingsSheet: View {
                     Button("Save As…") { app.presentSaveAs() }
                 }
                 ProjectLanguageSection(app: app)
+                ChapterAISection(app: app)
                 Section("Context for the translator") {
                     TextEditor(text: Binding(get: { app.projectSettings.storyContext }, set: { v in app.updateProjectSettings { $0.storyContext = v } }))
                         .frame(minHeight: 70)
@@ -468,8 +465,8 @@ struct LibraryInspector: View {
                 Picker("Source", selection: $settings.stored.defaults.sourceLanguage) {
                     Text("Auto-detect").tag("auto"); ForEach(LanguageInfo.all) { Text($0.name).tag($0.code) }
                 }
-                Picker("Provider", selection: $settings.stored.defaults.translationProvider) { ForEach(ProviderKind.allCases) { Text($0.shortName).tag($0) } }
-                TextField("Model", text: $settings.stored.defaults.translationModel)
+                LabeledContent("Translation", value: [settings.stored.defaults.translationProvider.shortName, settings.stored.defaults.translationModel].filter { !$0.isEmpty }.joined(separator: " · "))
+                SettingsLink { Text("Translation & OCR Settings…") }
                 Picker("Reading", selection: $settings.stored.defaults.readingDirection) { ForEach(ReadingDirection.allCases) { Text($0.displayName).tag($0) } }
             }
         }

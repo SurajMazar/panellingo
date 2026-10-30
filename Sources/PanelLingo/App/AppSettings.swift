@@ -26,6 +26,37 @@ final class AppSettings {
         var includePageImage = false
         var cloudWarningAcknowledged: [String] = []
         var appearance: String = "system"
+        /// One-time move from per-chapter to app-wide translation & OCR choices (v1.3).
+        var globalAIMigrated = false
+
+        init() {}
+
+        enum CodingKeys: String, CodingKey {
+            case defaults, providers, privacy, processing, projectLocation, autosave, defaultExport, jpegQuality, fileNamePattern,
+                 onboardingDone, lastProjectPath, includePageImage, cloudWarningAcknowledged, appearance, globalAIMigrated
+        }
+
+        /// Tolerant decoding so adding a setting in an update never resets the others.
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            let d = Stored()
+            func get<T: Decodable>(_ k: CodingKeys, _ def: T) -> T { (try? c.decodeIfPresent(T.self, forKey: k)) ?? def }
+            defaults = get(.defaults, d.defaults)
+            providers = get(.providers, d.providers)
+            privacy = get(.privacy, d.privacy)
+            processing = get(.processing, d.processing)
+            projectLocation = get(.projectLocation, d.projectLocation)
+            autosave = get(.autosave, d.autosave)
+            defaultExport = get(.defaultExport, d.defaultExport)
+            jpegQuality = get(.jpegQuality, d.jpegQuality)
+            fileNamePattern = get(.fileNamePattern, d.fileNamePattern)
+            onboardingDone = get(.onboardingDone, d.onboardingDone)
+            lastProjectPath = (try? c.decodeIfPresent(String.self, forKey: .lastProjectPath)) ?? nil
+            includePageImage = get(.includePageImage, d.includePageImage)
+            cloudWarningAcknowledged = get(.cloudWarningAcknowledged, d.cloudWarningAcknowledged)
+            appearance = get(.appearance, d.appearance)
+            globalAIMigrated = get(.globalAIMigrated, d.globalAIMigrated)
+        }
     }
 
     var stored: Stored { didSet { save() } }

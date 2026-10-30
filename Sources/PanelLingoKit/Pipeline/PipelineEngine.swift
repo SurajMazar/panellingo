@@ -115,8 +115,11 @@ public final class PipelineEngine: @unchecked Sendable {
         switch options.settings.ocrEngine {
         case .vision: return VisionOCRProvider()
         case .aiVision:
-            var cfg = options.providers[options.settings.translationProvider] ?? ProviderConfiguration(kind: options.settings.translationProvider)
-            if !options.settings.translationModel.isEmpty { cfg.model = options.settings.translationModel }
+            let st = options.settings
+            let kind = st.effectiveOCRProvider
+            var cfg = options.providers[kind] ?? ProviderConfiguration(kind: kind)
+            if let m = st.ocrModel, !m.isEmpty { cfg.model = m }
+            else if kind == st.translationProvider, !st.translationModel.isEmpty { cfg.model = st.translationModel }
             return AIVisionOCRProvider(configuration: cfg, privacy: options.privacy)
         }
     }

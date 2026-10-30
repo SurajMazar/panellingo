@@ -396,10 +396,61 @@ public struct ProjectSettings: Codable, Hashable, Sendable {
     public var translationModel: String = ""
     public var fallbackProvider: ProviderKind?
     public var ocrEngine: OCREngineKind = .vision
+    /// Provider/model for AI Vision OCR (nil = same as translation).
+    public var ocrProvider: ProviderKind?
+    public var ocrModel: String?
+    /// When false (default) the chapter follows the app-wide translation & OCR choices.
+    public var customAI: Bool = false
     public var cleanupMode: CleanupMode = .balanced
     public var defaultStyle: TextStyle = TextStylePresets.classic
     public var includePreviousPageContext: Bool = true
     public init() {}
+
+    enum CodingKeys: String, CodingKey {
+        case sourceLanguage, targetLanguage, readingDirection, tone, honorifics, customInstructions, storyContext,
+             translationProvider, translationModel, fallbackProvider, ocrEngine, ocrProvider, ocrModel, customAI,
+             cleanupMode, defaultStyle, includePreviousPageContext
+    }
+
+    /// Tolerant decoding: missing or unknown values fall back to defaults instead of failing the whole file.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = ProjectSettings()
+        func get<T: Decodable>(_ k: CodingKeys, _ def: T) -> T { (try? c.decodeIfPresent(T.self, forKey: k)) ?? def }
+        sourceLanguage = get(.sourceLanguage, d.sourceLanguage)
+        targetLanguage = get(.targetLanguage, d.targetLanguage)
+        readingDirection = get(.readingDirection, d.readingDirection)
+        tone = get(.tone, d.tone)
+        honorifics = get(.honorifics, d.honorifics)
+        customInstructions = get(.customInstructions, d.customInstructions)
+        storyContext = get(.storyContext, d.storyContext)
+        translationProvider = get(.translationProvider, d.translationProvider)
+        translationModel = get(.translationModel, d.translationModel)
+        fallbackProvider = (try? c.decodeIfPresent(ProviderKind.self, forKey: .fallbackProvider)) ?? nil
+        ocrEngine = get(.ocrEngine, d.ocrEngine)
+        ocrProvider = (try? c.decodeIfPresent(ProviderKind.self, forKey: .ocrProvider)) ?? nil
+        ocrModel = (try? c.decodeIfPresent(String.self, forKey: .ocrModel)) ?? nil
+        customAI = get(.customAI, d.customAI)
+        cleanupMode = get(.cleanupMode, d.cleanupMode)
+        defaultStyle = get(.defaultStyle, d.defaultStyle)
+        includePreviousPageContext = get(.includePreviousPageContext, d.includePreviousPageContext)
+    }
+
+    /// The provider/model AI Vision OCR uses.
+    public var effectiveOCRProvider: ProviderKind { ocrProvider ?? translationProvider }
+
+    /// Settings with the app-wide translation & OCR choices applied, unless this chapter overrides them.
+    public func applyingGlobalAI(_ global: ProjectSettings) -> ProjectSettings {
+        guard !customAI else { return self }
+        var s = self
+        s.translationProvider = global.translationProvider
+        s.translationModel = global.translationModel
+        s.fallbackProvider = global.fallbackProvider
+        s.ocrEngine = global.ocrEngine
+        s.ocrProvider = global.ocrProvider
+        s.ocrModel = global.ocrModel
+        return s
+    }
 }
 
 public struct GlossaryEntry: Codable, Hashable, Identifiable, Sendable {

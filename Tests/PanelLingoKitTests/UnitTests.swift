@@ -505,3 +505,26 @@ struct SeriesLibraryTests {
         #expect(info.name == "Old" && info.related.isEmpty && !info.id.isEmpty)
     }
 }
+
+@Suite("Global AI settings")
+struct GlobalAISettingsTests {
+    @Test func chaptersFollowGlobalUnlessCustom() {
+        var global = ProjectSettings()
+        global.translationProvider = .ollama; global.translationModel = "qwen3-vl:8b-instruct"
+        global.ocrEngine = .aiVision; global.ocrProvider = .ollama; global.ocrModel = "qwen3-vl:4b-instruct"
+        var chapter = ProjectSettings(); chapter.sourceLanguage = "ko"
+        let eff = chapter.applyingGlobalAI(global)
+        #expect(eff.translationProvider == .ollama && eff.translationModel == "qwen3-vl:8b-instruct")
+        #expect(eff.ocrEngine == .aiVision && eff.ocrModel == "qwen3-vl:4b-instruct" && eff.sourceLanguage == "ko")
+        chapter.customAI = true; chapter.translationProvider = .apple
+        #expect(chapter.applyingGlobalAI(global).translationProvider == .apple)
+        var noOCR = ProjectSettings(); noOCR.translationProvider = .lmStudio
+        #expect(noOCR.effectiveOCRProvider == .lmStudio)
+    }
+
+    @Test func oldSettingsFilesStillDecode() throws {
+        let old = #"{"sourceLanguage":"ko","targetLanguage":"en","translationProvider":"apple","ocrEngine":"vision","tone":"no-such-tone"}"#
+        let s = try FileIO.decoder.decode(ProjectSettings.self, from: Data(old.utf8))
+        #expect(s.sourceLanguage == "ko" && s.customAI == false && s.ocrProvider == nil && s.tone == .natural)
+    }
+}

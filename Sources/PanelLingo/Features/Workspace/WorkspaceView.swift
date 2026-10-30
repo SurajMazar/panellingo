@@ -4,6 +4,7 @@ import SwiftUI
 struct WorkspaceView: View {
     @Bindable var app: AppState
     @Environment(\.undoManager) private var undoManager
+    @Environment(\.openSettings) private var openSettings
     @State private var showInspector = true
 
     var body: some View {
@@ -20,7 +21,10 @@ struct WorkspaceView: View {
         .navigationTitle(app.showLibrary || !app.hasProject ? "Library" : app.projectTitle)
         .navigationSubtitle(subtitle)
         .toolbar { MainToolbar(app: app, showInspector: $showInspector) }
-        .onAppear { app.undoManager = undoManager }
+        .onAppear {
+            app.undoManager = undoManager
+            if ProcessInfo.processInfo.arguments.contains("--open-settings") { openSettings() }
+        }
         .onChange(of: undoManager) { _, u in app.undoManager = u }
         .onDrop(of: [.fileURL], isTargeted: nil) { providers in loadDrop(providers, app: app); return true }
         .alert(item: $app.alert) { a in Alert(title: Text(a.title), message: Text(a.message)) }
@@ -36,7 +40,7 @@ struct WorkspaceView: View {
 
     var subtitle: String {
         guard app.hasProject, !app.showLibrary else { return "" }
-        let s = app.projectSettings
+        let s = app.effectiveSettings
         let series = app.currentSeries.map { "\($0.info.name) · " } ?? ""
         return series + "\(LanguageInfo.name(s.sourceLanguage)) → \(LanguageInfo.name(s.targetLanguage)) · \(s.translationProvider.shortName)"
     }

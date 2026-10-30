@@ -4,18 +4,21 @@ import Translation
 
 struct SettingsView: View {
     @Bindable var settings = AppSettings.shared
+    /// Settings always open on Translation & OCR, the setting people change most.
+    @State private var tab = "translation"
     var body: some View {
-        TabView {
-            GeneralSettings(settings: settings).tabItem { Label("General", systemImage: "gearshape") }
-            LanguageSettings(settings: settings).tabItem { Label("Languages", systemImage: "globe") }
-            ProviderSettings(settings: settings).tabItem { Label("AI Providers", systemImage: "sparkles") }
-            LocalModelSettings(settings: settings).tabItem { Label("Local Models", systemImage: "cpu") }
-            OCRSettings(settings: settings).tabItem { Label("OCR", systemImage: "doc.text.viewfinder") }
-            TypesettingSettings(settings: settings).tabItem { Label("Typesetting", systemImage: "textformat") }
-            ProcessingSettingsView(settings: settings).tabItem { Label("Processing", systemImage: "speedometer") }
-            PrivacySettingsView(settings: settings).tabItem { Label("Privacy", systemImage: "hand.raised") }
+        TabView(selection: $tab) {
+            TranslationOCRSettings(settings: settings).tabItem { Label("Translation & OCR", systemImage: "character.bubble") }.tag("translation")
+            GeneralSettings(settings: settings).tabItem { Label("General", systemImage: "gearshape") }.tag("general")
+            LanguageSettings(settings: settings).tabItem { Label("Languages", systemImage: "globe") }.tag("languages")
+            ProviderSettings(settings: settings).tabItem { Label("AI Providers", systemImage: "sparkles") }.tag("providers")
+            LocalModelSettings(settings: settings).tabItem { Label("Local Models", systemImage: "cpu") }.tag("local")
+            OCRSettings(settings: settings).tabItem { Label("OCR", systemImage: "doc.text.viewfinder") }.tag("ocr")
+            TypesettingSettings(settings: settings).tabItem { Label("Typesetting", systemImage: "textformat") }.tag("typesetting")
+            ProcessingSettingsView(settings: settings).tabItem { Label("Processing", systemImage: "speedometer") }.tag("processing")
+            PrivacySettingsView(settings: settings).tabItem { Label("Privacy", systemImage: "hand.raised") }.tag("privacy")
         }
-        .frame(width: 640, height: 520)
+        .frame(width: 680, height: 540)
     }
 }
 
@@ -127,12 +130,6 @@ struct ProviderSettings: View {
                     Text(selected.isLocal(baseURL: settings.provider(selected).baseURL) ? "Runs locally: nothing leaves this Mac." :
                             "Cloud provider: text (and images, if allowed in Privacy) is sent to \(selected.shortName). You'll be asked before the first request in each session.")
                         .font(.caption).foregroundStyle(.secondary)
-                }
-                Section("Fallback") {
-                    Picker("If the project provider fails", selection: $settings.stored.defaults.fallbackProvider) {
-                        Text("None").tag(ProviderKind?.none)
-                        ForEach(ProviderKind.allCases) { Text($0.shortName).tag(Optional($0)) }
-                    }
                 }
             }.formStyle(.grouped)
         }
@@ -262,9 +259,7 @@ struct OCRSettings: View {
     @State private var langs: [String] = []
     var body: some View {
         Form {
-            Picker("Default OCR engine", selection: $settings.stored.defaults.ocrEngine) {
-                ForEach(OCREngineKind.allCases) { Text($0.displayName).tag($0) }
-            }
+            Text("Choose the OCR engine and model in Translation & OCR.").font(.callout).foregroundStyle(.secondary)
             LabeledContent("Detection sensitivity") {
                 Slider(value: $settings.stored.processing.detectionSensitivity, in: 0...1) { Text("") } minimumValueLabel: { Text("Strict") } maximumValueLabel: { Text("Loose") }
             }

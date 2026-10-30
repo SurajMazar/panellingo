@@ -123,8 +123,7 @@ struct OnboardingView: View {
             app.settings.stored.defaults.translationModel = m
         }
         if app.hasProject {
-            app.updateProjectSettings { $0.translationProvider = provider; $0.targetLanguage = target; $0.readingDirection = direction
-                if provider == .ollama, let m = ollamaStatus?.models.first { $0.translationModel = m } }
+            app.updateProjectSettings { $0.targetLanguage = target; $0.readingDirection = direction }
         }
         dismiss()
     }

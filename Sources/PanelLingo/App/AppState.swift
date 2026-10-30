@@ -128,10 +128,11 @@ final class AppState {
     weak var undoManager: UndoManager?
 
     init() {
-        showOnboarding = !settings.stored.onboardingDone
+        showOnboarding = !settings.stored.onboardingDone && !ProcessInfo.processInfo.arguments.contains("--skip-onboarding")
         if let path = settings.stored.lastProjectPath, FileManager.default.fileExists(atPath: path) {
             try? openProject(URL(fileURLWithPath: path))
         }
+        migrateToGlobalAI()
     }
 
     /// Launch arguments for demos and automated UI checks:
@@ -158,7 +159,7 @@ final class AppState {
             if url.pathExtension == ProjectStore.fileExtension { try? openProject(url) } else { importItems([url]) }
         }
         if let k = value("--provider").flatMap(ProviderKind.init(rawValue:)) {
-            updateProjectSettings { $0.translationProvider = k; if let m = value("--model") { $0.translationModel = m } }
+            updateProjectSettings { $0.customAI = true; $0.translationProvider = k; if let m = value("--model") { $0.translationModel = m } }
         }
         if let m = value("--mode").flatMap(RenderMode.init(rawValue:)) { displayMode = m }
         if let c = value("--compare") { comparison = c == "split" ? .split : c == "side" ? .sideBySide : .none }
@@ -174,6 +175,20 @@ final class AppState {
         }
     }
 
+    /// Before v1.3 provider/model/OCR were per chapter. On first launch, the last chapter's choice
+    /// becomes the app-wide one (so nothing silently switches back to Apple).
+    private func migrateToGlobalAI() {
+        guard !settings.stored.globalAIMigrated else { return }
+        if let s = store?.settings, s.translationProvider != settings.stored.defaults.translationProvider || !s.translationModel.isEmpty {
+            settings.stored.defaults.translationProvider = s.translationProvider
+            settings.stored.defaults.translationModel = s.translationModel
+            settings.stored.defaults.ocrEngine = s.ocrEngine
+            if let f = s.fallbackProvider { settings.stored.defaults.fallbackProvider = f }
+            settings.update(s.translationProvider) { if !s.translationModel.isEmpty { $0.model = s.translationModel } }
+        }
+        settings.stored.globalAIMigrated = true
+    }
+
     // MARK: - Derived
 
     var hasProject: Bool { store != nil }
@@ -185,9 +200,12 @@ final class AppState {
     }
     var isProcessingCurrentPage: Bool { selectedPageID.map { pageTasks[$0] != nil } ?? false }
 
+    /// Chapter settings with the app-wide translation & OCR choices applied (unless the chapter overrides them).
+    var effectiveSettings: ProjectSettings { projectSettings.applyingGlobalAI(settings.stored.defaults) }
+
     var pipelineOptions: PipelineOptions {
         // Chapter glossary/context first, then the series', then related series that share theirs.
-        var ps = projectSettings
+        var ps = effectiveSettings
         ps.storyContext = SeriesLibrary.effectiveStoryContext(chapter: projectSettings.storyContext, series: currentSeries, snapshot: library)
         return PipelineOptions(settings: ps, glossary: SeriesLibrary.effectiveGlossary(chapter: glossary, series: currentSeries, snapshot: library),
                         providers: settings.providerMap,
@@ -244,10 +262,6 @@ final class AppState {
                 url = dir.appendingPathComponent("PanelLingo Sample \(n).\(ProjectStore.fileExtension)"); n += 1
             }
             let s = try SampleComic.createSampleProject(at: url)
-            var ps = s.settings
-            ps.translationProvider = settings.stored.defaults.translationProvider
-            ps.translationModel = settings.stored.defaults.translationModel
-            try s.saveSettings(ps)
             try openProject(s.url)
         } catch { show(error, title: "Could not create the sample project") }
     }
@@ -838,11 +852,15 @@ final class AppState {
 
     /// Asks before content is first sent to a cloud provider in this session.
     func withCloudConsent(_ request: PipelineRequest, pages ids: [String], _ proceed: @escaping () -> Void) {
-        let cfg = settings.provider(projectSettings.translationProvider)
-        let sendsText = request.stages.contains(.translate) || (request.stages.contains(.ocr) && projectSettings.ocrEngine == .aiVision)
-        guard sendsText, !cfg.isLocal, !sessionConsent.contains(cfg.kind) else { proceed(); return }
+        let eff = effectiveSettings
+        let aiOCR = request.stages.contains(.ocr) && eff.ocrEngine == .aiVision
+        // First cloud provider this request would send content to without consent yet.
+        var kinds: [ProviderKind] = []
+        if request.stages.contains(.translate) { kinds.append(eff.translationProvider) }
+        if aiOCR { kinds.append(eff.effectiveOCRProvider) }
+        guard let cfg = kinds.map({ settings.provider($0) }).first(where: { !$0.isLocal && !sessionConsent.contains($0.kind) }) else { proceed(); return }
         let chars = ids.compactMap { pageIndex($0).map { pages[$0] } }.flatMap(\.regions).reduce(0) { $0 + $1.sourceText.count }
-        let images = (settings.stored.includePageImage && settings.stored.privacy.allowSendingImages) || projectSettings.ocrEngine == .aiVision
+        let images = (settings.stored.includePageImage && settings.stored.privacy.allowSendingImages) || (aiOCR && eff.effectiveOCRProvider == cfg.kind)
         consent = ConsentRequest(provider: cfg.kind, characters: chars, includesImages: images) { [weak self] in
             self?.sessionConsent.insert(cfg.kind)
             proceed()
@@ -944,7 +962,7 @@ final class AppState {
         guard let store else { return }
         let ids = pageIDs ?? pages.map(\.id)
         withCloudConsent(.full, pages: ids) { [self] in
-            let cfg = settings.provider(projectSettings.translationProvider)
+            let cfg = settings.provider(effectiveSettings.translationProvider)
             let local = cfg.isLocal && cfg.kind != .apple
             let conc = local ? settings.stored.processing.concurrentLocalInference : settings.stored.processing.concurrentPages
             let queue = BatchQueue(engine: PipelineEngine(store: store), options: pipelineOptions,

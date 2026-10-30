@@ -34,19 +34,15 @@ echo "Built $APP"
 # Local builds are installed into /Applications (skipped on CI or with PANELLINGO_NO_INSTALL=1).
 if [[ -z "${CI:-}" && "${PANELLINGO_NO_INSTALL:-}" != "1" ]]; then
   DEST="${PANELLINGO_INSTALL_DIR:-/Applications}/PanelLingo.app"
-  WAS_RUNNING=0
-  if pgrep -xq PanelLingo; then
-    WAS_RUNNING=1
-    # Projects autosave, so a normal quit loses nothing.
-    osascript -e 'tell application "PanelLingo" to quit' >/dev/null 2>&1 || true
-    for _ in $(seq 1 20); do pgrep -xq PanelLingo || break; sleep 0.25; done
-  fi
+  # Never quit a running copy (it may be mid-translation): the bundle is swapped in place and the
+  # running app keeps its loaded code; the new version starts the next time PanelLingo is opened.
+  RUNNING=0
+  pgrep -xq PanelLingo && RUNNING=1
   rm -rf "$DEST.new"
   ditto "$APP" "$DEST.new"
   rm -rf "$DEST"
   mv "$DEST.new" "$DEST"
   /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$DEST" >/dev/null 2>&1 || true
   echo "Installed $DEST"
-  # Reopen it if it was running (it restores the last chapter).
-  if [[ "$WAS_RUNNING" == "1" ]]; then open "$DEST"; echo "Relaunched PanelLingo"; fi
+  if [[ "$RUNNING" == "1" ]]; then echo "PanelLingo is running: the new version applies after you quit and reopen it"; fi
 fi

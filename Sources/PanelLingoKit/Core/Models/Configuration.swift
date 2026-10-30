@@ -101,7 +101,7 @@ public enum OCREngineKind: String, Codable, CaseIterable, Sendable, Identifiable
     public var displayName: String {
         switch self {
         case .vision: "Apple Vision (on-device)"
-        case .aiVision: "AI Vision model (uses translation provider)"
+        case .aiVision: "AI Vision model"
         }
     }
 }
