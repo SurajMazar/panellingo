@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key><string>en</string>
+	<key>CFBundleDisplayName</key><string>PanelLingo</string>
+	<key>CFBundleExecutable</key><string>PanelLingo</string>
+	<key>CFBundleIconFile</key><string>AppIcon</string>
+	<key>CFBundleIdentifier</key><string>app.panellingo.PanelLingo</string>
+	<key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+	<key>CFBundleName</key><string>PanelLingo</string>
+	<key>CFBundlePackageType</key><string>APPL</string>
+	<key>CFBundleShortVersionString</key><string>1.0.0</string>
+	<key>CFBundleVersion</key><string>1</string>
+	<key>LSApplicationCategoryType</key><string>public.app-category.graphics-design</string>
+	<key>LSMinimumSystemVersion</key><string>15.0</string>
+	<key>NSHighResolutionCapable</key><true/>
+	<key>NSHumanReadableCopyright</key><string>© 2026 PanelLingo contributors. MIT License.</string>
+	<key>NSPrincipalClass</key><string>NSApplication</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key><true/>
+	</dict>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key><string>PanelLingo Project</string>
+			<key>CFBundleTypeRole</key><string>Editor</string>
+			<key>LSHandlerRank</key><string>Owner</string>
+			<key>LSTypeIsPackage</key><true/>
+			<key>LSItemContentTypes</key><array><string>app.panellingo.project</string></array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeName</key><string>Comic Image or Archive</string>
+			<key>CFBundleTypeRole</key><string>Viewer</string>
+			<key>LSHandlerRank</key><string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.image</string>
+				<string>com.adobe.pdf</string>
+				<string>public.zip-archive</string>
+				<string>app.panellingo.cbz</string>
+			</array>
+		</dict>
+	</array>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key><string>app.panellingo.project</string>
+			<key>UTTypeDescription</key><string>PanelLingo Project</string>
+			<key>UTTypeConformsTo</key><array><string>com.apple.package</string><string>public.composite-content</string></array>
+			<key>UTTypeTagSpecification</key><dict><key>public.filename-extension</key><array><string>panellingo</string></array></dict>
+		</dict>
+	</array>
+	<key>UTImportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key><string>app.panellingo.cbz</string>
+			<key>UTTypeDescription</key><string>Comic Book Archive</string>
+			<key>UTTypeConformsTo</key><array><string>public.zip-archive</string></array>
+			<key>UTTypeTagSpecification</key><dict><key>public.filename-extension</key><array><string>cbz</string></array></dict>
+		</dict>
+	</array>
+</dict>
+</plist>
