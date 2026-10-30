@@ -433,9 +433,8 @@ final class MaskTintCache {
         guard let mask = app.store?.loadMask(pageID: page.id, regionID: region.id) else { return nil }
         var rgba = RGBAImage(width: mask.width, height: mask.height)
         for i in 0..<mask.bits.count where mask.bits[i] != 0 {
-            rgba.pixels[i * 4] = 230; rgba.pixels[i * 4 + 1] = 30; rgba.pixels[i * 4 + 2] = 60; rgba.pixels[i * 4 + 3] = 110
-            // premultiplied
-            rgba.pixels[i * 4] = UInt8(230 * 110 / 255); rgba.pixels[i * 4 + 1] = UInt8(30 * 110 / 255); rgba.pixels[i * 4 + 2] = UInt8(60 * 110 / 255)
+            // Premultiplied red at ~43% opacity.
+            rgba.pixels[i * 4] = 99; rgba.pixels[i * 4 + 1] = 13; rgba.pixels[i * 4 + 2] = 26; rgba.pixels[i * 4 + 3] = 110
         }
         let img = rgba.cgImage()
         if cache.count > 64 { cache.removeAll() }

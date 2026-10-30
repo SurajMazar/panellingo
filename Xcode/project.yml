@@ -1,0 +1,46 @@
+# Xcode project for PanelLingo. Regenerate with:  cd Xcode && xcodegen generate
+name: PanelLingo
+options:
+  bundleIdPrefix: app.panellingo
+  deploymentTarget:
+    macOS: "15.0"
+  createIntermediateGroups: true
+packages:
+  PanelLingoPackage:
+    path: ..
+targets:
+  PanelLingo:
+    type: application
+    platform: macOS
+    sources:
+      - path: ../Sources/PanelLingo
+        excludes:
+          - Resources/Info.plist
+      - path: ../Resources/AppIcon.icns
+        buildPhase: resources
+    dependencies:
+      - package: PanelLingoPackage
+        product: PanelLingoKit
+    settings:
+      base:
+        PRODUCT_NAME: PanelLingo
+        PRODUCT_BUNDLE_IDENTIFIER: app.panellingo.PanelLingo
+        INFOPLIST_FILE: ../Sources/PanelLingo/Resources/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        SWIFT_VERSION: "5.0"
+        MACOSX_DEPLOYMENT_TARGET: "15.0"
+        ENABLE_HARDENED_RUNTIME: YES
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGN_STYLE: Manual
+        MARKETING_VERSION: 1.0.0
+        CURRENT_PROJECT_VERSION: 1
+        COMBINE_HIDPI_IMAGES: YES
+schemes:
+  PanelLingo:
+    build:
+      targets:
+        PanelLingo: all
+    run:
+      config: Debug
+    archive:
+      config: Release

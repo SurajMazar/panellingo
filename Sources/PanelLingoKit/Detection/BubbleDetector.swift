@@ -83,9 +83,7 @@ public struct BubbleDetector: Sendable {
         guard marginX > 0.01 || marginY > 0.01 else { return nil }
 
         let orientation = Self.orientation(of: holes, glyphHeight: median)
-        if ProcessInfo.processInfo.environment["PANELLINGO_DEBUG"] != nil {
-            print("bubble@\(originX),\(originY) \(comp.width)x\(comp.height) glyphs=\(glyphs.count) median=\(median) cons=\(consistency) dark=\(meanDark) orient=\(orientation)")
-        }
+        Log.pipeline.debug("bubble@\(originX),\(originY) \(comp.width)x\(comp.height) glyphs=\(glyphs.count) median=\(median) consistency=\(consistency) dark=\(meanDark)")
         var score = 0.35 + 0.25 * consistency + 0.15 * min(1, Double(glyphs.count) / 6)
         score += 0.15 * min(1, max(0, (150 - meanDark) / 100))
         score += fill > 0.6 ? 0.1 : 0

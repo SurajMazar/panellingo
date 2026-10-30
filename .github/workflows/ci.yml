@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build-test-package:
+    name: Build, test & package
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+          sw_vers
+
+      - name: Cache SwiftPM
+        uses: actions/cache@v4
+        with:
+          path: .build
+          key: spm-${{ runner.os }}-${{ hashFiles('Package.resolved', 'Package.swift') }}
+          restore-keys: spm-${{ runner.os }}-
+
+      - name: Build (SwiftPM)
+        run: swift build
+
+      - name: Unit & integration tests
+        run: swift test 2>&1 | tee test.log
+
+      - name: Build Xcode project
+        run: |
+          brew install xcodegen
+          cd Xcode && xcodegen generate
+          xcodebuild -project PanelLingo.xcodeproj -scheme PanelLingo -configuration Release \
+            -destination 'generic/platform=macOS' -derivedDataPath ../DerivedData \
+            CODE_SIGNING_ALLOWED=NO build | tail -20
+
+      - name: Package universal app + DMG
+        env:
+          PANELLINGO_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '1.0.0' }}
+        run: |
+          export PANELLINGO_VERSION="${PANELLINGO_VERSION#v}"
+          scripts/build-app.sh release --universal
+          lipo -info dist/PanelLingo.app/Contents/MacOS/PanelLingo
+          dist/PanelLingo.app/Contents/MacOS/panellingo-cli sample dist/sample.png
+          dist/PanelLingo.app/Contents/MacOS/panellingo-cli detect dist/sample.png --from ja
+          scripts/make-dmg.sh
+
+      - name: Upload app artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PanelLingo-macOS
+          path: |
+            dist/*.dmg
+            test.log
+          if-no-files-found: error
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.dmg
+          generate_release_notes: true
