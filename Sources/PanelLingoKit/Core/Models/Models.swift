@@ -442,5 +442,5 @@ public struct ProjectManifest: Codable, Hashable, Sendable {
 }
 
 public enum PanelLingoVersion {
-    public static let string = "1.1.0"
+    public static let string = "1.2.0"
 }
