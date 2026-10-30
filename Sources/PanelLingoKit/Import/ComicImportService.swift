@@ -106,11 +106,45 @@ public struct DefaultComicImportService: ComicImportService {
         var out: [Item] = []
         let stem = url.deletingPathExtension().lastPathComponent
         for i in 0..<doc.pageCount {
-            guard let page = doc.page(at: i), let img = Self.render(page, dpi: pdfDPI) else { continue }
+            guard let page = doc.page(at: i) else { continue }
+            // Scanned / image-only PDFs: render at the embedded image's own resolution instead of
+            // upscaling (a 720 px webtoon strip would otherwise become 3000 px wide at 300 DPI).
+            let dpi = Self.embeddedImageDPI(page).map { min($0, pdfDPI * 2) } ?? pdfDPI
+            guard let img = Self.render(page, dpi: dpi) else { continue }
             out.append(Item(name: "\(stem) p\(i + 1)", ext: "png", data: try ImageIOHelper.png(img), origin: "\(url.path)#\(i + 1)"))
         }
         if out.isEmpty { throw PanelLingoError.corruptFile("\(url.lastPathComponent) has no renderable pages") }
         return out
+    }
+
+    /// DPI at which the page's largest embedded image maps 1:1 to pixels, when that image covers
+    /// (almost) the whole page; nil for vector / text pages.
+    public static func embeddedImageDPI(_ page: PDFPage) -> Double? {
+        guard let cg = page.pageRef, let dict = cg.dictionary else { return nil }
+        var resources: CGPDFDictionaryRef?, xobjects: CGPDFDictionaryRef?
+        guard CGPDFDictionaryGetDictionary(dict, "Resources", &resources), let res = resources,
+              CGPDFDictionaryGetDictionary(res, "XObject", &xobjects), let xo = xobjects else { return nil }
+        final class Box { var best: (w: Int, h: Int)? }
+        let box = Box()
+        CGPDFDictionaryApplyBlock(xo, { _, object, info in
+            var stream: CGPDFStreamRef?
+            guard CGPDFObjectGetValue(object, .stream, &stream), let st = stream, let d = CGPDFStreamGetDictionary(st) else { return true }
+            var subtype: UnsafePointer<CChar>?
+            var w: CGPDFInteger = 0, h: CGPDFInteger = 0
+            guard CGPDFDictionaryGetName(d, "Subtype", &subtype), let sub = subtype, String(cString: sub) == "Image",
+                  CGPDFDictionaryGetInteger(d, "Width", &w), CGPDFDictionaryGetInteger(d, "Height", &h) else { return true }
+            let b = Unmanaged<Box>.fromOpaque(info!).takeUnretainedValue()
+            if b.best == nil || w * h > b.best!.w * b.best!.h { b.best = (w, h) }
+            return true
+        }, Unmanaged.passUnretained(box).toOpaque())
+        guard let (w, h) = box.best else { return nil }
+        let bounds = page.bounds(for: .mediaBox)
+        let rotated = page.rotation % 180 != 0
+        let pageW = rotated ? bounds.height : bounds.width, pageH = rotated ? bounds.width : bounds.height
+        let imgW = Double(rotated ? h : w), imgH = Double(rotated ? w : h)
+        // Only when the image fills the page with the same aspect ratio.
+        guard pageW > 0, pageH > 0, abs(imgW / imgH - pageW / pageH) < 0.02 else { return nil }
+        return imgW / pageW * 72
     }
 
     /// Renders a PDF page at the requested DPI (white background, respects page rotation).

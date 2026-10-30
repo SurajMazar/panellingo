@@ -5,7 +5,9 @@ struct InspectorView: View {
     @Bindable var app: AppState
     var body: some View {
         Group {
-            if let r = app.selectedRegion {
+            if app.showLibrary || !app.hasProject {
+                LibraryInspector(app: app)
+            } else if let r = app.selectedRegion {
                 RegionInspector(app: app, region: r).id(r.id)
             } else if app.selectedRegionIDs.count > 1 {
                 MultiRegionInspector(app: app)
@@ -400,11 +402,15 @@ struct ProjectSettingsSheet: View {
     @Bindable var app: AppState
     @Environment(\.dismiss) private var dismiss
     @State private var title = ""
+    @State private var series = ""
+    @State private var number = ""
     var body: some View {
         VStack(spacing: 0) {
             Form {
-                Section("Project") {
+                Section("Chapter") {
                     TextField("Title", text: $title).onSubmit { app.renameProject(title) }
+                    TextField("Series", text: $series)
+                    TextField("Chapter", text: $number)
                     LabeledContent("Location", value: app.store?.url.path ?? "—").font(.caption)
                     Button("Save As…") { app.presentSaveAs() }
                 }
@@ -425,9 +431,47 @@ struct ProjectSettingsSheet: View {
                     })) { ForEach(TextStylePresets.all, id: \.id) { Text($0.name).tag($0.id) } }
                 }
             }.formStyle(.grouped)
-            HStack { Spacer(); Button("Done") { app.renameProject(title); dismiss() }.keyboardShortcut(.defaultAction) }.padding()
+            HStack { Spacer(); Button("Done") {
+                if let url = app.store?.url { app.updateChapterInfo(url, title: title, series: series, chapter: number) }
+                dismiss()
+            }.keyboardShortcut(.defaultAction) }.padding()
         }
-        .frame(width: 520, height: 640)
-        .onAppear { title = app.projectTitle }
+        .frame(width: 520, height: 680)
+        .onAppear { title = app.projectTitle; series = app.store?.manifest.series ?? ""; number = app.store?.manifest.chapter ?? "" }
+    }
+}
+
+/// Inspector content while the library is shown: how chapters and translation work.
+struct LibraryInspector: View {
+    @Bindable var app: AppState
+    @Bindable var settings = AppSettings.shared
+    var body: some View {
+        Form {
+            Section("Library") {
+                LabeledContent("Chapters", value: "\(app.chapters.count)")
+                LabeledContent("Translated", value: "\(app.chapters.filter { $0.status == .translated || $0.status == .needsReview }.count)")
+                LabeledContent("Folder") { Text(app.settings.projectLocation.path).font(.caption).lineLimit(2).truncationMode(.middle) }
+                Button("Change Folder…") {
+                    let p = NSOpenPanel(); p.canChooseDirectories = true; p.canChooseFiles = false; p.canCreateDirectories = true
+                    if p.runModal() == .OK, let u = p.url { settings.stored.projectLocation = u.path; app.reloadLibrary() }
+                }
+            }
+            Section("How it works") {
+                Text("Each chapter is one project. Adding a PDF, CBZ/CBR archive or folder creates one chapter; loose images dropped together form one chapter.")
+                Text("Series and chapter number are guessed from the file name (e.g. “…-chapter-108.pdf”). Edit them with right-click › Edit Series & Chapter.")
+                Text("A new chapter starts with the glossary of the latest chapter in the same series, so names stay consistent.")
+            }
+            .font(.callout).foregroundStyle(.secondary)
+            Section("New chapter defaults") {
+                Picker("Translate into", selection: $settings.stored.defaults.targetLanguage) { ForEach(LanguageInfo.all) { Text($0.name).tag($0.code) } }
+                Picker("Source", selection: $settings.stored.defaults.sourceLanguage) {
+                    Text("Auto-detect").tag("auto"); ForEach(LanguageInfo.all) { Text($0.name).tag($0.code) }
+                }
+                Picker("Provider", selection: $settings.stored.defaults.translationProvider) { ForEach(ProviderKind.allCases) { Text($0.shortName).tag($0) } }
+                TextField("Model", text: $settings.stored.defaults.translationModel)
+                Picker("Reading", selection: $settings.stored.defaults.readingDirection) { ForEach(ReadingDirection.allCases) { Text($0.displayName).tag($0) } }
+            }
+        }
+        .formStyle(.grouped)
     }
 }

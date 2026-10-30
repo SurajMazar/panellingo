@@ -381,3 +381,46 @@ struct MixedScriptTests {
         #expect(TextJoiner.join(["あっ、", "そうだった！"], language: "ja") == "あっ、そうだった！")
     }
 }
+
+@Suite("Chapter library")
+struct ChapterLibraryTests {
+    @Test func guessesSeriesAndChapter() {
+        let a = ChapterLibrary.guess(from: "regressed-warriors-female-dominance-raw-chapter-108.pdf")
+        #expect(a.series == "Regressed Warriors Female Dominance" && a.chapter == "108")
+        let b = ChapterLibrary.guess(from: "Solo Leveling Ch. 12.5.cbz")
+        #expect(b.series == "Solo Leveling" && b.chapter == "12.5")
+        let c = ChapterLibrary.guess(from: "ワンピース 第1050話")
+        #expect(c.series == "ワンピース" && c.chapter == "1050")
+        let d = ChapterLibrary.guess(from: "My Comic 007")
+        #expect(d.series == "My Comic" && d.chapter == "7")
+        #expect(ChapterLibrary.guess(from: "artbook").chapter == nil)
+    }
+
+    @Test func groupsImportsIntoChapters() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("lib-\(UUID().uuidString.prefix(6))")
+        try FileManager.default.createDirectory(at: dir.appendingPathComponent("ch-3"), withIntermediateDirectories: true)
+        let urls = [dir.appendingPathComponent("b.png"), dir.appendingPathComponent("ch-2.cbz"), dir.appendingPathComponent("ch-1.pdf"),
+                    dir.appendingPathComponent("ch-3"), dir.appendingPathComponent("a.png")]
+        let groups = ChapterLibrary.groupIntoChapters(urls)
+        #expect(groups.map(\.name) == ["ch-1", "ch-2", "ch-3", dir.lastPathComponent])
+        #expect(groups.last?.items.map(\.lastPathComponent) == ["a.png", "b.png"])
+    }
+
+    @Test func scansProjectsAndReportsProgress() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("lib-\(UUID().uuidString.prefix(6))")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let png = try ImageIOHelper.png(SampleComic.noTextPage())
+        for (n, done) in [("10", 2), ("2", 0)] {
+            let store = try ProjectStore.create(at: dir.appendingPathComponent("S ch \(n).panellingo"), title: "S ch \(n)")
+            try store.updateManifest { $0.series = "S"; $0.chapter = n }
+            for i in 0..<2 {
+                var p = try store.addPage(imageData: png, fileExtension: "png", name: "p\(i)", importedFrom: nil)
+                if i < done { p.completedStages = Set(PipelineStage.allCases); p.status = .completed; try store.savePage(p) }
+            }
+        }
+        let chapters = ChapterLibrary.scan(folder: dir).sorted(by: ChapterLibrary.chapterOrder)
+        #expect(chapters.map(\.chapter) == ["2", "10"])
+        #expect(chapters[0].status == .notStarted && chapters[1].status == .translated)
+        #expect(chapters[1].progress == 1 && chapters[1].pageCount == 2)
+    }
+}

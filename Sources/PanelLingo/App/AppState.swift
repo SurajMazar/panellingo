@@ -104,6 +104,11 @@ final class AppState {
     var alternatives: [String: [TranslationRecord]] = [:]
     private var sessionConsent: Set<ProviderKind> = []
 
+    // Library
+    var showLibrary = false
+    var chapters: [ChapterSummary] = []
+    var libraryLoading = false
+
     // Presentation
     var alert: AlertItem?
     var consent: ConsentRequest?
@@ -129,6 +134,9 @@ final class AppState {
         let args = ProcessInfo.processInfo.arguments
         func value(_ k: String) -> String? { args.firstIndex(of: k).flatMap { args.indices.contains($0 + 1) ? args[$0 + 1] : nil } }
         if args.contains("--skip-onboarding") { showOnboarding = false }
+        if args.contains("--library") { showLibrary = true }
+        let addChapters = args.indices.filter { args[$0] == "--add-chapter" && args.indices.contains($0 + 1) }.map { URL(fileURLWithPath: args[$0 + 1]) }
+        if !addChapters.isEmpty { importAsChapters(addChapters) }
         if args.contains("--sample") { openSample() }
         if let p = value("--open") {
             let url = URL(fileURLWithPath: p)
@@ -185,6 +193,7 @@ final class AppState {
         selectedRegionIDs = []
         selectedPageID = pages.first?.id
         settings.stored.lastProjectPath = url.path
+        showLibrary = false
         NSDocumentController.shared.noteNewRecentDocumentURL(url)
         undoManager?.removeAllActions()
         pageChanged()
@@ -247,6 +256,106 @@ final class AppState {
         } catch { show(error, title: "Save As failed") }
     }
 
+    // MARK: - Library
+
+    func reloadLibrary() {
+        let folder = settings.projectLocation
+        let recents = NSDocumentController.shared.recentDocumentURLs + [store?.url].compactMap { $0 }
+        libraryLoading = true
+        Task.detached(priority: .userInitiated) {
+            let found = ChapterLibrary.scan(folder: folder, extra: recents)
+            await MainActor.run { self.chapters = found; self.libraryLoading = false }
+        }
+    }
+
+    /// Creates one project per chapter (each PDF, archive or folder; loose images together),
+    /// guessing series and chapter number from the names, then opens the last one.
+    func importAsChapters(_ urls: [URL], translate: Bool = false) {
+        let groups = ChapterLibrary.groupIntoChapters(urls)
+        guard !groups.isEmpty else { return }
+        let dir = settings.projectLocation
+        importProgress = (0, "Creating \(groups.count) chapter\(groups.count == 1 ? "" : "s")…")
+        Task {
+            var created: [URL] = []
+            var problems: [String] = []
+            for (i, g) in groups.enumerated() {
+                do {
+                    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+                    let guess = ChapterLibrary.guess(from: g.name)
+                    var url = dir.appendingPathComponent("\(FileIO.sanitizeFileName(g.name)).\(ProjectStore.fileExtension)")
+                    var n = 2
+                    while FileManager.default.fileExists(atPath: url.path) {
+                        url = dir.appendingPathComponent("\(FileIO.sanitizeFileName(g.name)) \(n).\(ProjectStore.fileExtension)"); n += 1
+                    }
+                    let s = try ProjectStore.create(at: url, title: g.name, settings: self.settings.stored.defaults)
+                    try s.updateManifest { $0.series = guess.series; $0.chapter = guess.chapter }
+                    // Chapters of the same series share the glossary of the most recent chapter.
+                    if let series = guess.series, let sibling = self.chapters.filter({ $0.series == series }).max(by: { $0.modified < $1.modified }),
+                       let g = try? ProjectStore.open(sibling.url).glossary, !g.isEmpty {
+                        try? s.saveGlossary(g)
+                    }
+                    self.importProgress = (Double(i) / Double(groups.count), g.name)
+                    let report = await DefaultComicImportService().importItems(g.items, into: s)
+                    if report.added.isEmpty {
+                        problems.append("\(g.name): " + (report.failures.first?.reason ?? (report.duplicates.isEmpty ? "no pages" : "duplicate pages only")))
+                        try? FileManager.default.removeItem(at: url)
+                    } else {
+                        created.append(url)
+                        if !report.failures.isEmpty { problems.append("\(g.name): \(report.failures.count) file(s) failed") }
+                    }
+                } catch { problems.append("\(g.name): \(error.localizedDescription)") }
+            }
+            self.importProgress = nil
+            self.reloadLibrary()
+            if let last = created.last {
+                do { try self.openProject(last) } catch { self.show(error, title: "Could not open chapter") }
+                if translate { self.startBatch() }
+            }
+            let msg = "Added \(created.count) chapter\(created.count == 1 ? "" : "s")"
+            if problems.isEmpty { self.toast = msg } else { self.alert = AlertItem(title: msg, message: problems.joined(separator: "\n")) }
+        }
+    }
+
+    func presentAddChaptersPanel(translate: Bool = false) {
+        let p = NSOpenPanel()
+        p.allowsMultipleSelection = true
+        p.canChooseDirectories = true
+        p.allowedContentTypes = [.image, .pdf, .zip, .folder] + ["cbz", "cbr", "webp"].compactMap { UTType(filenameExtension: $0) }
+        p.message = "Each PDF, CBZ/CBR or folder becomes one chapter. Loose images become a single chapter."
+        if p.runModal() == .OK { importAsChapters(p.urls, translate: translate) }
+    }
+
+    func openChapter(_ c: ChapterSummary) {
+        if store?.url.standardizedFileURL == c.url.standardizedFileURL { showLibrary = false; return }
+        do { try openProject(c.url) } catch { show(error, title: "Could not open chapter") }
+    }
+
+    func trashChapter(_ c: ChapterSummary) {
+        if store?.url.standardizedFileURL == c.url.standardizedFileURL {
+            cancelAllProcessing()
+            store = nil; pages = []; selectedPageID = nil; settings.stored.lastProjectPath = nil
+        }
+        NSWorkspace.shared.recycle([c.url]) { _, error in
+            Task { @MainActor in
+                if let error { self.show(error, title: "Could not move to Trash") } else { self.toast = "Moved “\(c.title)” to the Trash" }
+                self.reloadLibrary()
+            }
+        }
+    }
+
+    func updateChapterInfo(_ url: URL, title: String, series: String, chapter: String) {
+        do {
+            let s = (store?.url.standardizedFileURL == url.standardizedFileURL) ? store! : try ProjectStore.open(url)
+            try s.updateManifest {
+                $0.title = title.isEmpty ? $0.title : title
+                $0.series = series.trimmingCharacters(in: .whitespaces).nilIfEmptyString
+                $0.chapter = chapter.trimmingCharacters(in: .whitespaces).nilIfEmptyString
+            }
+            if s === store { projectTitle = s.manifest.title }
+            reloadLibrary()
+        } catch { show(error, title: "Could not update chapter") }
+    }
+
     func renameProject(_ title: String) {
         guard let store, !title.isEmpty else { return }
         try? store.updateManifest { $0.title = title }
@@ -280,7 +389,8 @@ final class AppState {
     }
 
     func importItems(_ urls: [URL], at index: Int? = nil) {
-        if store == nil { newProject(title: urls.first?.deletingPathExtension().lastPathComponent ?? "Untitled Comic") }
+        // Outside a project (or from the library) every PDF / archive / folder becomes its own chapter.
+        if store == nil || showLibrary { importAsChapters(urls); return }
         guard let store else { return }
         importProgress = (0, "Importing…")
         Task {
@@ -716,8 +826,14 @@ final class AppState {
         }
     }
 
+    func revealInFinder(_ url: URL) { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+
     func reveal(_ pageID: String, region: String) {
         selectedPageID = pageID
         selectedRegionIDs = [region]
     }
+}
+
+extension String {
+    var nilIfEmptyString: String? { isEmpty ? nil : self }
 }

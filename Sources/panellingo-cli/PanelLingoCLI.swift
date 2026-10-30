@@ -15,10 +15,12 @@ struct PanelLingoCLI {
                         [--model <name>] [--base-url <url>] [--direction rtl|ltr|ttb]
                         [--ocr vision|aiVision] [--cleanup fast|balanced|quality]
                         [--project <out.panellingo>] [--out <dir|file.cbz|file.pdf>] [--json <file>]
+                        [--series <name>] [--chapter <number>]   (default: guessed from the file name)
           panellingo-cli detect <image> [--from <lang>] [--direction rtl|ltr|ttb]
           panellingo-cli sample <out.png> [--kind ja|en|ko|zh|none]
           panellingo-cli models --provider <kind> [--base-url <url>]
           panellingo-cli languages
+          panellingo-cli library [<folder>]      list chapters and translation progress
 
         API keys are read from the macOS Keychain (set them in the app) or PANELLINGO_<PROVIDER>_KEY.
         """)
@@ -45,6 +47,7 @@ struct PanelLingoCLI {
             case "sample": try sample(positional, flags)
             case "models": try await models(flags)
             case "languages": await languages()
+            case "library": library(positional)
             default: usage()
             }
         } catch {
@@ -69,6 +72,8 @@ struct PanelLingoCLI {
         settings.cleanupMode = CleanupMode(rawValue: f["cleanup"] ?? "balanced") ?? .balanced
         let projectURL = URL(fileURLWithPath: f["project"] ?? NSTemporaryDirectory() + "panellingo-cli-\(UUID().uuidString.prefix(8)).panellingo")
         let store = try ProjectStore.create(at: projectURL, title: URL(fileURLWithPath: input).deletingPathExtension().lastPathComponent, settings: settings)
+        let guess = ChapterLibrary.guess(from: URL(fileURLWithPath: input).lastPathComponent)
+        try store.updateManifest { $0.series = f["series"] ?? guess.series; $0.chapter = f["chapter"] ?? guess.chapter }
         let report = await DefaultComicImportService().importItems([URL(fileURLWithPath: input)], into: store)
         print(report.summary)
         for fl in report.failures { print("  ✗ \(fl.name): \(fl.reason)") }
@@ -148,6 +153,19 @@ struct PanelLingoCLI {
         let status = await TranslationEngine.defaultProvider(cfg).testConnection()
         print(status.message)
         for m in status.models { print("  \(m)") }
+    }
+
+    static func library(_ pos: [String]) {
+        let folder = URL(fileURLWithPath: pos.first ?? (NSHomeDirectory() + "/Documents/PanelLingo"))
+        let chapters = ChapterLibrary.scan(folder: folder)
+        let groups = Dictionary(grouping: chapters, by: \.seriesKey)
+        for key in groups.keys.sorted() {
+            print(key)
+            for c in groups[key]!.sorted(by: ChapterLibrary.chapterOrder) {
+                print("  \(c.displayTitle.padding(toLength: 22, withPad: " ", startingAt: 0)) \(c.status.displayName.padding(toLength: 15, withPad: " ", startingAt: 0)) \(c.translatedPages)/\(c.pageCount) pages  \(c.url.lastPathComponent)")
+            }
+        }
+        print("\(chapters.count) chapter(s) in \(folder.path)")
     }
 
     static func languages() async {

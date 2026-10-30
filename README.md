@@ -8,6 +8,8 @@ Built with Swift, SwiftUI and AppKit. Runs fully on-device with Apple Translatio
 
 ![PanelLingo workspace](docs/screenshot.png)
 
+![Chapter library](docs/library.png)
+
 | Original (sample page drawn for PanelLingo) | Translated with a local `qwen3-vl:8b-instruct` |
 |---|---|
 | <img src="docs/sample-original.png" width="420"> | <img src="docs/sample-translated.png" width="420"> |
@@ -23,8 +25,9 @@ Built with Swift, SwiftUI and AppKit. Runs fully on-device with Apple Translatio
 - **Typesetting**: Core Text auto-fit that wraps lines to the bubble's actual outline, finds the largest font size that fits and never breaks inside a word unless it has to. It flags overflow and supports outline/stroke, rotation, alignment, line spacing, vertical CJK, right-to-left scripts and font fallback. Lettering presets (Classic Comic, Manga Dialogue, Modern Webtoon, Handwritten, Clean Sans, Bold SFX, Caption) use only fonts that ship with macOS.
 - **Editing**: move and resize regions, draw rectangles or polygons, merge, split, change type, Do Not Translate, Lock. Double-click a bubble to edit its translation and watch the lettering update live. Every edit can be undone and redone.
 - **Compare**: Original, Cleaned and Translated views, a draggable split view, and synchronised side-by-side views.
+- **Chapter library**: every chapter is its own project, listed in a Library grouped by series. Each card shows translated pages, status (not started, in progress, needs review, translated, failed), languages and when it was last changed. Adding a PDF, CBZ/CBR or folder creates one chapter, with the series and chapter number guessed from the file name ("…-chapter-108.pdf"). A new chapter starts with the latest glossary from the same series.
 - **Batch**: translate a whole chapter with limited concurrency (local models run one page at a time), with pause, resume, cancel and retry of failed pages. One failing page never stops the batch.
-- **Import**: PNG, JPEG, WebP, TIFF, HEIC, GIF, BMP, PDF (rendered at 300 DPI), CBZ/ZIP, CBR (via the system `bsdtar`), folders, clipboard and drag & drop. Files are sorted naturally (1, 2, 10) and duplicates are detected.
+- **Import**: PNG, JPEG, WebP, TIFF, HEIC, GIF, BMP, PDF (image-only pages at their native resolution, other pages at 300 DPI), CBZ/ZIP, CBR (via the system `bsdtar`), folders, clipboard and drag & drop. Files are sorted naturally (1, 2, 10) and duplicates are detected.
 - **Export**: PNG, JPEG, multi-page PDF, CBZ, JSON (all regions, OCR, translations, styling), a Markdown transcript, or a copy of the project package. Exports keep the original resolution and contain no editor overlays.
 - **Projects**: a `.panellingo` file package holding the original files (never modified), page JSON, masks, cleaned patches and previews. Every write is atomic and the format is versioned.
 - **Privacy**: no telemetry and no account. Local-only mode blocks cloud providers. Sending images is off by default. You are asked before the first cloud request in each session. API keys live only in the Keychain and are redacted from logs.
@@ -38,7 +41,7 @@ Requires macOS 15 or later. It is a universal build for Apple Silicon and Intel.
 ## Quick start
 
 1. Launch PanelLingo. The first-run guide asks how you want to translate.
-2. Drop a page, PDF, CBZ or folder into the window, or choose **File › Open Sample Project**.
+2. In the **Library** (⇧⌘L), drop chapter PDFs, CBZs or folders, or click **Add Chapters**. Each one becomes a chapter. Inside an open chapter, dropping files adds pages to it instead.
 3. Pick source and target languages and a provider in the inspector (with nothing selected, the inspector shows page and project settings).
 4. Press **Translate Comic** (⌘↩), or use **Comic › Translate Chapter…** for every page.
 5. Review the regions marked ⚠︎, fix the text in the inspector or double-click a bubble, then **Export** (⌘E).
@@ -65,6 +68,7 @@ panellingo-cli translate chapter.cbz --from ja --to en --provider ollama --model
 panellingo-cli detect page.png --from ja
 panellingo-cli models --provider ollama
 panellingo-cli languages
+panellingo-cli library ~/Documents/PanelLingo   # chapters and translation progress
 ```
 
 ## Build from source

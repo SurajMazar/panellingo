@@ -430,6 +430,10 @@ public struct ProjectManifest: Codable, Hashable, Sendable {
     public var formatVersion: Int = ProjectManifest.currentFormatVersion
     public var id: String = UUID().uuidString
     public var title: String
+    /// Series this chapter belongs to (optional; used to group the library).
+    public var series: String?
+    /// Chapter label, e.g. "108" or "12.5".
+    public var chapter: String?
     public var created: Date = Date()
     public var modified: Date = Date()
     public var pageIDs: [String] = []

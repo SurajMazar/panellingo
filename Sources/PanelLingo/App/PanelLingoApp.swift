@@ -54,7 +54,10 @@ struct AppCommands: Commands {
 
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
-            Button("New Project") { app.newProject() }.keyboardShortcut("n")
+            Button("Library") { if app.hasProject { app.showLibrary.toggle() } }.keyboardShortcut("l", modifiers: [.command, .shift])
+            Button("Add Chapters…") { app.presentAddChaptersPanel() }.keyboardShortcut("o", modifiers: [.command, .option])
+            Divider()
+            Button("New Empty Chapter") { app.newProject() }.keyboardShortcut("n")
             Button("Open Project…") { app.presentOpenPanel() }.keyboardShortcut("o", modifiers: [.command, .shift])
             Button("Open Sample Project") { app.openSample() }
             Divider()

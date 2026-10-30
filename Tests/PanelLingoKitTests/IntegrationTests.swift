@@ -211,8 +211,8 @@ struct ImportExportTests {
         doc.insert(PDFPage(image: NSImage(cgImage: SampleComic.englishPage(), size: NSSize(width: 550, height: 750)))!, at: 0)
         doc.write(to: pdfURL)
         let store = try ProjectStore.create(at: dir.appendingPathComponent("p.panellingo"), title: "PDF")
-        var svc = DefaultComicImportService(); svc.pdfDPI = 144
-        let report = await svc.importItems([pdfURL], into: store)
+        // Image-only PDF: imported at the embedded image's native size, not re-rendered at the default DPI.
+        let report = await DefaultComicImportService().importItems([pdfURL], into: store)
         let page = try #require(report.added.first)
         #expect(page.pixelWidth == 1100 && page.pixelHeight == 1500)
 

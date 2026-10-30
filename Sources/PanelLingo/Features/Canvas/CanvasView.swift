@@ -8,7 +8,9 @@ struct CanvasArea: View {
 
     var body: some View {
         Group {
-            if let page = app.currentPage, let original = app.originalImage {
+            if app.showLibrary || !app.hasProject {
+                LibraryView(app: app)
+            } else if let page = app.currentPage, let original = app.originalImage {
                 let size = CGSize(width: original.width, height: original.height)
                 switch app.comparison {
                 case .sideBySide:
@@ -28,14 +30,12 @@ struct CanvasArea: View {
                     ZoomableScrollView(contentSize: size, canvas: app.canvas,
                                        content: AnyView(PageCanvasContent(app: app, page: page, mode: app.displayMode, interactive: true)))
                 }
-            } else if app.hasProject {
+            } else {
                 DropTargetPlaceholder(app: app, title: app.pages.isEmpty ? "Drop comic pages here" : "Select a page",
                                       subtitle: "Images, PDF, CBZ / CBR archives or folders")
-            } else {
-                WelcomeView(app: app)
             }
         }
-        .overlay(alignment: .bottom) { CanvasStatusBar(app: app) }
+        .overlay(alignment: .bottom) { if !(app.showLibrary || !app.hasProject) || app.importProgress != nil || app.toast != nil { CanvasStatusBar(app: app) } }
     }
 
     func labelled<V: View>(_ title: String, @ViewBuilder _ v: () -> V) -> some View {

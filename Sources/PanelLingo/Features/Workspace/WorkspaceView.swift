@@ -17,7 +17,7 @@ struct WorkspaceView: View {
                         .inspectorColumnWidth(min: 280, ideal: 320, max: 460)
                 }
         }
-        .navigationTitle(app.hasProject ? app.projectTitle : "PanelLingo")
+        .navigationTitle(app.showLibrary || !app.hasProject ? "Library" : app.projectTitle)
         .navigationSubtitle(subtitle)
         .toolbar { MainToolbar(app: app, showInspector: $showInspector) }
         .onAppear { app.undoManager = undoManager }
@@ -35,7 +35,7 @@ struct WorkspaceView: View {
     }
 
     var subtitle: String {
-        guard app.hasProject else { return "" }
+        guard app.hasProject, !app.showLibrary else { return "" }
         let s = app.projectSettings
         return "\(LanguageInfo.name(s.sourceLanguage)) → \(LanguageInfo.name(s.targetLanguage)) · \(s.translationProvider.shortName)"
     }
@@ -47,9 +47,16 @@ struct MainToolbar: ToolbarContent {
 
     var body: some ToolbarContent {
         ToolbarItemGroup(placement: .navigation) {
-            Button { app.presentImportPanel() } label: { Label("Import", systemImage: "square.and.arrow.down") }
-                .help("Import images, PDF, CBZ or a folder (⌘O)")
+            Toggle(isOn: Binding(get: { app.showLibrary || !app.hasProject }, set: { v in if app.hasProject { app.showLibrary = v } })) {
+                Label("Library", systemImage: "books.vertical")
+            }
+            .help("Show all chapters (⇧⌘L)")
+            Button { app.showLibrary || !app.hasProject ? app.presentAddChaptersPanel() : app.presentImportPanel() } label: {
+                Label("Import", systemImage: "square.and.arrow.down")
+            }
+            .help("Library: add chapters (one per PDF/CBZ/folder). Chapter: add pages to it (⌘O)")
         }
+        if !(app.showLibrary || !app.hasProject) {
         ToolbarItemGroup(placement: .principal) {
             Picker("Display", selection: $app.displayMode) {
                 ForEach(RenderMode.allCases) { Text($0.displayName).tag($0) }
@@ -65,7 +72,9 @@ struct MainToolbar: ToolbarContent {
             } label: { Label("Compare", systemImage: "rectangle.split.2x1") }
             .help("Split or side-by-side comparison")
         }
+        }
         ToolbarItemGroup {
+            if !(app.showLibrary || !app.hasProject) {
             Picker("Tool", selection: $app.tool) {
                 ForEach(CanvasTool.allCases) { t in Label(t.label, systemImage: t.symbol).tag(t) }
             }
@@ -100,6 +109,7 @@ struct MainToolbar: ToolbarContent {
 
             Button { app.showExport = true } label: { Label("Export", systemImage: "square.and.arrow.up") }
                 .disabled(app.pages.isEmpty)
+            }
             SettingsLink { Label("Settings", systemImage: "gearshape") }
             Button { showInspector.toggle() } label: { Label("Inspector", systemImage: "sidebar.right") }
         }
@@ -115,6 +125,9 @@ struct SidebarView: View {
         List(selection: $app.selectedPageID) {
             if app.hasProject {
                 Section {
+                    Button { app.showLibrary = true } label: {
+                        Label("All Chapters", systemImage: "books.vertical")
+                    }.buttonStyle(.borderless)
                     HStack {
                         Image(systemName: "book.closed.fill").foregroundStyle(.tint)
                         Text(app.projectTitle).font(.headline).lineLimit(1)
